@@ -11,14 +11,14 @@ Three findings held. **Two were wrong. Two blocked items are now closed.**
 
 ## Summary
 
-| Batch 1 finding | Verdict |
-|---|---|
-| 5 products contained as DRAFT | **Confirmed** — all five still DRAFT |
-| Built Under Pressure hoodie live and branded | **Confirmed** — ACTIVE, vendor KASH CROWN, type HOODIE |
-| Second sales channel unauthorised | **Confirmed still live** — Microsoft Copilot published |
-| C1 compare-at "cannot verify" | **Closed — worse.** Store has zero orders. All 19 are unsupportable |
-| C4 "$75 threshold unverified" | **Closed — finding was wrong.** No threshold exists anywhere |
-| H1 "five delivery profiles" | **Wrong — there are nine** |
+| Batch 1 finding                              | Verdict                                                             |
+| -------------------------------------------- | ------------------------------------------------------------------- |
+| 5 products contained as DRAFT                | **Confirmed** — all five still DRAFT                                |
+| Built Under Pressure hoodie live and branded | **Confirmed** — ACTIVE, vendor KASH CROWN, type HOODIE              |
+| Second sales channel unauthorised            | **Confirmed still live** — Microsoft Copilot published              |
+| C1 compare-at "cannot verify"                | **Closed — worse.** Store has zero orders. All 19 are unsupportable |
+| C4 "$75 threshold unverified"                | **Closed — finding was wrong.** No threshold exists anywhere        |
+| H1 "five delivery profiles"                  | **Wrong — there are nine**                                          |
 
 ---
 
@@ -34,8 +34,8 @@ Nothing has been reverted or re-published. See `evidence/product-status.md`.
 
 - `status: ACTIVE`, `vendor: KASH CROWN`, `productType: HOODIE` — all correct
 - `resourcePublications` returns **two** published channels:
-  - `Online Store` → `isPublished: true`  ✅ intended
-  - `Microsoft Copilot` → `isPublished: true`  ❌ **not authorised, still live**
+  - `Online Store` → `isPublished: true` ✅ intended
+  - `Microsoft Copilot` → `isPublished: true` ❌ **not authorised, still live**
 
 This item from the handover list has **not** been resolved. It still needs the manual unpublish
 (product → Publishing → uncheck Microsoft Copilot), or explicit approval to do it via API.
@@ -71,17 +71,17 @@ that exist in the entire store are `TOTAL_WEIGHT` bands on the Apliiq profile.
 
 What actually happens on a US order:
 
-| Profile | US rate | Free? |
-|---|---|---|
-| General profile (default) | $0.00, no conditions | Always free |
-| Printful: Tshirts (#PF-FRG1) | $0.00 | Always free |
-| Printful: Tshirts (#PF-FRG1001) | $0.00 | Always free |
-| Zendrop | $0.00 | Always free |
-| Printful: Stickers (#PF-FRG10) | $4.29 | **Never free** |
-| Printful: Snapbacks & Buckets (#PF-FRG1096) | $4.49 | **Never free** |
-| Printful: Pin buttons (#PF-FRG35) | $4.50 | **Never free** |
-| Printful: Hoodies (#PF-FRG2) | $8.49 | **Never free** |
-| Apliiq Print On Demand | $5.96 → $157.99 by weight | **Never free** |
+| Profile                                     | US rate                   | Free?          |
+| ------------------------------------------- | ------------------------- | -------------- |
+| General profile (default)                   | $0.00, no conditions      | Always free    |
+| Printful: Tshirts (#PF-FRG1)                | $0.00                     | Always free    |
+| Printful: Tshirts (#PF-FRG1001)             | $0.00                     | Always free    |
+| Zendrop                                     | $0.00                     | Always free    |
+| Printful: Stickers (#PF-FRG10)              | $4.29                     | **Never free** |
+| Printful: Snapbacks & Buckets (#PF-FRG1096) | $4.49                     | **Never free** |
+| Printful: Pin buttons (#PF-FRG35)           | $4.50                     | **Never free** |
+| Printful: Hoodies (#PF-FRG2)                | $8.49                     | **Never free** |
+| Apliiq Print On Demand                      | $5.96 → $157.99 by weight | **Never free** |
 
 So the marquee is wrong in both directions simultaneously:
 

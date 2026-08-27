@@ -11,14 +11,14 @@ Backup of the kashcrown.com store audit. Store: **KASH CROWN** / `www.kashcrown.
 
 ## Contents
 
-| File | What it is |
-|---|---|
-| `2026-08-26-batch-1-containment-and-storefront.md` | Batch 1 audit as originally written: root cause, containment actions, storefront scan |
-| `2026-08-27-verification-live-store.md` | Independent re-verification against the live store. **Corrects two findings and closes two blocked items.** |
-| `evidence/product-status.md` | Live status of the 5 contained products + the new hoodie |
-| `evidence/pricing-compare-at.md` | All 21 active products, price vs compare-at |
-| `evidence/delivery-profiles.md` | All 9 delivery profiles and their real US rates |
-| `open-decisions.md` | What still needs an owner call |
+| File                                               | What it is                                                                                                  |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `2026-08-26-batch-1-containment-and-storefront.md` | Batch 1 audit as originally written: root cause, containment actions, storefront scan                       |
+| `2026-08-27-verification-live-store.md`            | Independent re-verification against the live store. **Corrects two findings and closes two blocked items.** |
+| `evidence/product-status.md`                       | Live status of the 5 contained products + the new hoodie                                                    |
+| `evidence/pricing-compare-at.md`                   | All 21 active products, price vs compare-at                                                                 |
+| `evidence/delivery-profiles.md`                    | All 9 delivery profiles and their real US rates                                                             |
+| `open-decisions.md`                                | What still needs an owner call                                                                              |
 
 ## Reading order
 

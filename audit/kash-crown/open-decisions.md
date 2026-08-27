@@ -11,8 +11,9 @@ so no compare-at price is supported by any sale. Every "Sale" badge references a
 has never sold at.
 
 Options put to the owner:
+
 - **Strip all 19** — remove `compareAtPrice` from every variant. Actual prices unchanged; only the
-  fictitious "was" price and Sale badges disappear. Reversible. *(recommended)*
+  fictitious "was" price and Sale badges disappear. Reversible. _(recommended)_
 - **Strip worst offenders only** — largest implied discounts first (Pin Set 40%, Patch 30%,
   Essentials tees 29%, Feel The Pressure 28%). Reduces but does not clear exposure.
 - **Leave and decide later** — 19 products stay live with fictitious reference prices.
@@ -26,6 +27,7 @@ Tees ship free unconditionally; hoodies/hats/pins/stickers/all Apliiq items are 
 The $98 Built Under Pressure hoodie advertises free shipping and charges $5.96+ at checkout.
 
 Options put to the owner:
+
 - **Fix the banner to match reality** — copy change only, no config change, no margin impact.
 - **Build a real $75 threshold** — add subtotal conditions so the promise becomes true. Absorbs
   $4.29–$8.49+ per order on hoodies, hats, accessories and Apliiq items.
@@ -84,10 +86,10 @@ unsupported claim, but not confirmable as false without the print config.
 
 ## Remaining audit batches
 
-| Batch | Scope | State |
-|---|---|---|
-| 2 | Collection pages, all live product pages, search, cart, recommendations, About/FAQ/Contact, five policy bodies, mobile viewport, checkout to shipping-method step | not started |
-| 3 | Master catalog audit — one row per product and variant | not started |
-| 4 | Pricing and margin report per variant | not started |
-| 5 | Product-copy and SEO plan | not started |
-| 6 | Storefront implementation plan | not started |
+| Batch | Scope                                                                                                                                                             | State       |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| 2     | Collection pages, all live product pages, search, cart, recommendations, About/FAQ/Contact, five policy bodies, mobile viewport, checkout to shipping-method step | not started |
+| 3     | Master catalog audit — one row per product and variant                                                                                                            | not started |
+| 4     | Pricing and margin report per variant                                                                                                                             | not started |
+| 5     | Product-copy and SEO plan                                                                                                                                         | not started |
+| 6     | Storefront implementation plan                                                                                                                                    | not started |

@@ -1,4 +1,5 @@
 # KASH CROWN — Full Store Audit
+
 # BATCH 1: Emergency containment + live storefront scan
 
 **Date:** 2026-08-26
@@ -19,7 +20,7 @@ mistakes — it is one mechanism firing five times. Until the workflow changes, 
 "add to store" click puts an unbranded supplier page live on kashcrown.com within seconds.
 
 Evidence: all five raw products carry `vendor: "Apliiq"`, `tags: []`, `seo: {title: null,
-description: null}`, and Apliiq B2B marketing copy addressed to *"brand owners"* with outbound
+description: null}`, and Apliiq B2B marketing copy addressed to _"brand owners"_ with outbound
 links to `apliiq.com`.
 
 Three of them went live during the audit (00:00:57, 00:06:43, 00:08:03) — while scanning.
@@ -31,13 +32,13 @@ Three of them went live during the audit (00:00:57, 00:06:43, 00:08:03) — whil
 Status change only. No deletion. No change to artwork, media, variants, supplier, price,
 description, title, or handle.
 
-| # | Title (before) | Handle | Product ID | Before | After | Reason |
-|---|---|---|---|---|---|---|
-| 1 | Gildan Heavyweight Tee Rapid Fulfillment | `gildan-heavyweight-tee-rapid-fulfillment` | `10837647491384` | ACTIVE | DRAFT | Supplier title, vendor `Apliiq`, Gildan 5000 boilerplate, apliiq.com links, no tags, no SEO |
-| 2 | Gildan Heavy Blend Hoodie Speedy Delivery | `gildan-heavy-blend-hoodie-speedy-delivery` | `10837545615672` | ACTIVE | DRAFT | Same failure class. Also "Speedy Delivery" in a customer-facing title |
-| 3 | Tultex Womens Poly Rich T Shirt | `tultex-womens-poly-rich-t-shirt` | `10837860876600` | ACTIVE | DRAFT | Went live 00:00:57. B2B copy: "built for brand owners", apliiq.com link |
-| 4 | Women's Premium Cotton T Shirt | `womens-premium-cotton-t-shirt` | `10837862318392` | ACTIVE | DRAFT | Went live 00:06:43. Same B2B copy |
-| 5 | Women's Premium Cotton T Shirt | `womens-premium-cotton-t-shirt-1` | `10837862416696` | ACTIVE | DRAFT | Went live 00:08:03. Byte-identical duplicate of #4, 80 seconds apart |
+| #   | Title (before)                            | Handle                                      | Product ID       | Before | After | Reason                                                                                      |
+| --- | ----------------------------------------- | ------------------------------------------- | ---------------- | ------ | ----- | ------------------------------------------------------------------------------------------- |
+| 1   | Gildan Heavyweight Tee Rapid Fulfillment  | `gildan-heavyweight-tee-rapid-fulfillment`  | `10837647491384` | ACTIVE | DRAFT | Supplier title, vendor `Apliiq`, Gildan 5000 boilerplate, apliiq.com links, no tags, no SEO |
+| 2   | Gildan Heavy Blend Hoodie Speedy Delivery | `gildan-heavy-blend-hoodie-speedy-delivery` | `10837545615672` | ACTIVE | DRAFT | Same failure class. Also "Speedy Delivery" in a customer-facing title                       |
+| 3   | Tultex Womens Poly Rich T Shirt           | `tultex-womens-poly-rich-t-shirt`           | `10837860876600` | ACTIVE | DRAFT | Went live 00:00:57. B2B copy: "built for brand owners", apliiq.com link                     |
+| 4   | Women's Premium Cotton T Shirt            | `womens-premium-cotton-t-shirt`             | `10837862318392` | ACTIVE | DRAFT | Went live 00:06:43. Same B2B copy                                                           |
+| 5   | Women's Premium Cotton T Shirt            | `womens-premium-cotton-t-shirt-1`           | `10837862416696` | ACTIVE | DRAFT | Went live 00:08:03. Byte-identical duplicate of #4, 80 seconds apart                        |
 
 Verification source: Shopify Admin GraphQL `productUpdate` response, each returning the exact
 product ID, handle, title, and `status: "DRAFT"` with `userErrors: []`.
@@ -49,7 +50,9 @@ Note on a reversal: an earlier owner instruction was "Leave them live, brand the
 items 1–2. A newer instruction said draft immediately. The newer, more specific one was followed.
 
 ### Crown & Dice Hoodie — confirmed clean
+
 `kash-crown-crown-dice-hoodie-black` / `10821951979832`
+
 - productType: HOODIE (corrected earlier in session from SWEATPANTS)
 - Collections: `kash-crown`, `hoodies`, `new-arrivals`, `wear-the-crown-shop-all`, `apparel`
 - Not in any sweatpants collection. No filtering or navigation break.
@@ -68,11 +71,11 @@ featured items. Full table in `evidence/pricing-compare-at.md`.
 
 A compare-at price represents a price the item was actually offered at. Could not verify from
 product records whether these were ever the real selling price — needs order history.
-**BLOCKED / NEEDS OWNER DECISION.**  → *Closed in verification pass.*
+**BLOCKED / NEEDS OWNER DECISION.** → _Closed in verification pass._
 
 **C2 — "MADE TO ORDER IN THE US" (hero) and "MADE TO ORDER - PRINTED IN THE US" (banner).**
 The Gilt tee's blank is made in Honduras (Apliiq product record, `shmhss`). Printing in the US
-and *making* in the US are different claims; the FTC treats "Made in USA" as a strict standard.
+and _making_ in the US are different claims; the FTC treats "Made in USA" as a strict standard.
 "Printed in the US" is likely defensible; "made to order in the US" reads as origin.
 Printful fulfilment locations unverified. **BLOCKED / NEEDS OWNER DECISION.**
 
@@ -84,7 +87,7 @@ Homepage: "Ships 2-5 days." Apliiq's own product text, live on the Gilt listing:
 Delivery profiles pulled. General profile has one Domestic method "Standard" and one
 International method. Could not read rate amounts or any $75 threshold — first query failed with
 a GraphQL syntax error and the corrected query returned method names without prices.
-**BLOCKED — needs verification in Shopify Settings → Shipping.**  → *Closed in verification pass; finding was wrong.*
+**BLOCKED — needs verification in Shopify Settings → Shipping.** → _Closed in verification pass; finding was wrong._
 
 ### HIGH
 
@@ -92,7 +95,7 @@ a GraphQL syntax error and the corrected query returned method names without pri
 plus four Printful flat-rate profiles — Tshirts (#PF-FRG1), Tshirts (#PF-FRG1001),
 Snapbacks and Bucket hats (#PF-FRG1096), Hoodies (#PF-FRG2). A cart mixing an Apliiq tee and a
 Printful tee draws rates from separate profiles → multiple shipping charges and two parcels.
-Two separate Printful T-shirt profiles is itself suspicious.  → *Undercounted; see verification.*
+Two separate Printful T-shirt profiles is itself suspicious. → _Undercounted; see verification._
 
 **H2 — "HEAVYWEIGHT STREETWEAR" as storewide positioning.** Catalog includes a 3.6 oz poly-blend
 women's tee, three tees tagged `lightweight` at $19.99, and a 5.3 oz Gildan 5000. The hero claim
@@ -118,7 +121,7 @@ and all badged "Sale." The newest and most expensive piece isn't shown.
 1. `deliveryProfiles` query with `rateProvider`/`methodConditions` →
    `syntax error, unexpected end of file at [1, 474]`. Query was malformed. Re-ran a simpler
    read-only version. Rate amounts and the $75 threshold remained unread.
-   → *Resolved in verification pass.*
+   → _Resolved in verification pass._
 2. `shop { privacyPolicy refundPolicy termsOfService shippingPolicy }` →
    `Field 'privacyPolicy' doesn't exist on type 'Shop'`. Correct field is `shop.shopPolicies`.
    Re-ran successfully.
