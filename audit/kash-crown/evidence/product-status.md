@@ -28,7 +28,7 @@ copy are unchanged, so these are not publishable until rewritten.
 
 ### Sales channels — ISSUE
 
-```
+```text
 resourcePublications:
   Online Store        isPublished: true    <- intended
   Microsoft Copilot   isPublished: true    <- NOT AUTHORISED, still live

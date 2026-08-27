@@ -1,6 +1,6 @@
-# KASH CROWN — Full Store Audit
+# KASH CROWN — Full Store Audit: Batch 1
 
-# BATCH 1: Emergency containment + live storefront scan
+**Batch scope:** Emergency containment + live storefront scan
 
 **Date:** 2026-08-26
 **Scope:** read-only except where marked EXECUTED

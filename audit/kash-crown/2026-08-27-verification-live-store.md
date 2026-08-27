@@ -42,7 +42,7 @@ This item from the handover list has **not** been resolved. It still needs the m
 
 ## 3. C1 — compare-at pricing: closed, and it is worse than "unverifiable"
 
-```
+```text
 ordersCount(limit: 1000) → { count: 0, precision: "EXACT" }
 ```
 
