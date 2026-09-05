@@ -466,4 +466,14 @@ const refused = (r) => r.result?.isError === true;
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed, ${skip} skipped`);
-process.exit(fail ? 1 : 0);
+
+// A skipped assertion is loud but not fatal by default: on a Windows box with
+// neither symlink nor junction available, failing the whole suite would punish
+// a platform limitation. Automation gating on this suite should set
+// PLAYWRIGHT_MCP_TEST_STRICT=1, because a containment vector that did not run
+// is not a containment vector that held.
+const strict = process.env.PLAYWRIGHT_MCP_TEST_STRICT === "1";
+if (skip && strict) {
+  console.log("STRICT: skipped assertions count as failures");
+}
+process.exit(fail || (strict && skip) ? 1 : 0);
