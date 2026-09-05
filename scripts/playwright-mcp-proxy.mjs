@@ -147,7 +147,63 @@ function pumpLines(src, dst, onLine, label) {
   });
 }
 
-// client -> server: intercept file-writing calls, forward everything else.
+/**
+ * Map each frame that must be refused to its reason. A JSON-RPC batch is an
+ * array, so a guard on msg.method alone would forward the whole frame
+ * uninspected. MCP 2025-06-18 dropped batching and @playwright/mcp ignores
+ * such frames, but the gate must not rest on an upstream's incidental
+ * behaviour -- PLAYWRIGHT_MCP_CMD can name a server that does honour them.
+ *
+ * Every filename-bearing tool is gated, not just browser_take_screenshot:
+ * browser_pdf_save and friends write through the same argument.
+ */
+function collectRefusals(frames) {
+  const refusals = new Map();
+  for (const m of frames) {
+    if (m?.method !== "tools/call") continue;
+    const filename = m.params?.arguments?.filename;
+    if (filename === undefined || filename === null) continue;
+    let reason;
+    try {
+      reason = containmentError(filename);
+    } catch (err) {
+      reason = `filename could not be resolved: ${err.code ?? err.message}`;
+    }
+    if (reason !== null) refusals.set(m, reason);
+  }
+  return refusals;
+}
+
+/**
+ * Fail closed: one bad member refuses the whole batch, rather than
+ * re-serializing a filtered one and losing byte-fidelity. A notification
+ * (no id) gets no response, only suppression.
+ */
+function refusalResponses(frames, refusals) {
+  const responses = [];
+  for (const m of frames) {
+    if (m?.id === undefined || m?.id === null) continue;
+    const reason = refusals.get(m);
+    responses.push({
+      jsonrpc: "2.0",
+      id: m.id,
+      result: {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: reason
+              ? `Refused ${m.params?.name ?? "tools/call"}: ${reason}.`
+              : "Refused: another call in this batch left the output directory."
+          }
+        ]
+      }
+    });
+  }
+  return responses;
+}
+
+// client -> server: refuse uncontained writes, forward everything else as-is.
 pumpLines(
   process.stdin,
   child.stdin,
@@ -159,57 +215,12 @@ pumpLines(
       return line; // not our business to police framing errors
     }
 
-    // A JSON-RPC batch is an array, so msg.method is undefined and a naive
-    // guard forwards the whole frame uninspected. MCP 2025-06-18 dropped
-    // batching and @playwright/mcp ignores such frames, but the gate must not
-    // rest on an upstream's incidental behaviour -- PLAYWRIGHT_MCP_CMD can
-    // name a server that does honour them.
     const batched = Array.isArray(msg);
     const frames = batched ? msg : [msg];
+    const refusals = collectRefusals(frames);
+    if (refusals.size === 0) return line; // forward original bytes untouched
 
-    // Every filename-bearing tool is gated, not just browser_take_screenshot:
-    // browser_pdf_save and friends write through the same argument.
-    const refusals = new Map();
-    for (const m of frames) {
-      if (m?.method !== "tools/call") continue;
-      const filename = m.params?.arguments?.filename;
-      if (filename === undefined || filename === null) continue;
-      let reason;
-      try {
-        reason = containmentError(filename);
-      } catch (err) {
-        reason = `filename could not be resolved: ${err.code ?? err.message}`;
-      }
-      if (reason !== null) refusals.set(m, reason);
-    }
-
-    // Nothing to refuse: forward the original bytes untouched.
-    if (refusals.size === 0) return line;
-
-    // Fail closed. One bad member refuses the whole batch rather than
-    // re-serializing a filtered one, which would break byte-fidelity.
-    // A notification (no id) gets no response, only suppression.
-    const responses = [];
-    for (const m of frames) {
-      if (m?.id === undefined || m?.id === null) continue;
-      const reason = refusals.get(m);
-      responses.push({
-        jsonrpc: "2.0",
-        id: m.id,
-        result: {
-          isError: true,
-          content: [
-            {
-              type: "text",
-              text: reason
-                ? `Refused ${m.params?.name ?? "tools/call"}: ${reason}.`
-                : "Refused: another call in this batch left the output directory."
-            }
-          ]
-        }
-      });
-    }
-
+    const responses = refusalResponses(frames, refusals);
     if (responses.length > 0) {
       writeBackpressured(
         process.stdin,
