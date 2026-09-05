@@ -399,6 +399,37 @@ const refused = (r) => r.result?.isError === true;
   );
 }
 
+// 18 — every tool in @playwright/mcp's default set whose `filename` argument
+//      means "write the result here" is gated. Enumerated from the live
+//      tools/list of @playwright/mcp@0.0.80: gating keys on the argument
+//      name, not a tool allowlist, so all six are covered by construction.
+//      A tool-name allowlist would have covered only the screenshot.
+{
+  const WRITERS = [
+    "browser_take_screenshot",
+    "browser_evaluate",
+    "browser_snapshot",
+    "browser_console_messages",
+    "browser_network_requests",
+    "browser_network_request"
+  ];
+  const calls = WRITERS.map((name, i) => ({
+    jsonrpc: "2.0",
+    id: 50 + i,
+    method: "tools/call",
+    params: { name, arguments: { filename: "../out.txt" } }
+  }));
+  const { stdout } = await run(calls);
+  const rs = replies(stdout);
+  const allRefused = rs.length === WRITERS.length && rs.every(refused);
+  const leaked = fs.existsSync(path.join(path.dirname(outDir), "out.txt"));
+  check(
+    "every filename-writing tool gated",
+    allRefused && !leaked,
+    `${rs.filter(refused).length}/${WRITERS.length} refused`
+  );
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
