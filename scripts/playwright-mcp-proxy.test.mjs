@@ -673,6 +673,75 @@ const refused = (r) => r.result?.isError === true;
     traversal.refused === true && !fs.existsSync(path.join(tmp, "escaped.png")),
     traversal.refused ? "gate intact" : "LEAKED"
   );
+
+  // 22 — a client REQUEST that reuses the server's roots/list id, arriving
+  //      before the genuine reply, must not consume the pending id and skip the
+  //      rewrite. Client and server number requests in independent JSON-RPC id
+  //      spaces, so this collision is ordinary. Inject it, then send the real
+  //      reply with the same id, and assert upstream still resolved against the
+  //      output dir. Against the delete-first ordering this leaked to tmp.
+  const runRootsCollision = (roots, filename) =>
+    new Promise((resolve) => {
+      const proc = spawn("node", [PROXY, outDir, "node", rootsStub], {
+        stdio: ["pipe", "pipe", "pipe"]
+      });
+      let result = {};
+      let acc = "";
+      let seenRoot;
+      const finish = (r) => {
+        result = r;
+        proc.kill();
+      };
+      const timer = setTimeout(() => finish({}), 15000);
+      proc.on("close", () => {
+        clearTimeout(timer);
+        resolve(result);
+      });
+      proc.stdout.on("data", (c) => {
+        acc += c;
+        let i;
+        while ((i = acc.indexOf("\n")) !== -1) {
+          const line = acc.slice(0, i);
+          acc = acc.slice(i + 1);
+          if (!line.trim()) continue;
+          let m;
+          try {
+            m = JSON.parse(line);
+          } catch {
+            continue;
+          }
+          if (m.method === "roots/list") {
+            // A colliding client REQUEST reusing the roots/list id ...
+            proc.stdin.write(
+              `${JSON.stringify({ jsonrpc: "2.0", id: m.id, method: "ping" })}
+`
+            );
+            // ... then the genuine reply, same id.
+            proc.stdin.write(
+              `${JSON.stringify({ jsonrpc: "2.0", id: m.id, result: { roots } })}
+`
+            );
+          } else if (m.id === "ready") {
+            seenRoot = m.result.root;
+            proc.stdin.write(`${JSON.stringify(shot(81, { filename }))}
+`);
+          } else if (m.id === 81) {
+            finish({ wrote: m.result?.wrote, seenRoot, refused: refused(m) });
+          }
+        }
+      });
+    });
+
+  const collision = await runRootsCollision(projectRoots, "collide.png");
+  check(
+    "colliding client id does not defeat the roots rewrite",
+    collision.seenRoot === outDir &&
+      inside(collision.wrote) &&
+      !fs.existsSync(path.join(tmp, "collide.png")),
+    collision.seenRoot === outDir
+      ? "rewrite held"
+      : `LEAKED via ${collision.seenRoot ?? "(absent)"}`
+  );
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });
