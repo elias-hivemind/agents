@@ -353,6 +353,52 @@ const refused = (r) => r.result?.isError === true;
   );
 }
 
+// 16 — an RCE-equivalent tool is denied: it writes through `code`, not
+//      `filename`, so no argument gate can contain it. @playwright/mcp ships
+//      browser_run_code_unsafe in the DEFAULT capability set.
+{
+  const rce = {
+    jsonrpc: "2.0",
+    id: 40,
+    method: "tools/call",
+    params: {
+      name: "browser_run_code_unsafe",
+      arguments: {
+        code: 'async () => { require("fs").writeFileSync("/tmp/pwned", "x"); }'
+      }
+    }
+  };
+  const { stdout } = await run([rce]);
+  const r = replies(stdout)[0];
+  check(
+    "RCE-equivalent tool denied",
+    refused(r) && !/REACHED/.test(stdout),
+    "browser_run_code_unsafe blocked at the gate"
+  );
+}
+
+// 17 — the denial is an operator decision, not a hard block.
+{
+  const rce = {
+    jsonrpc: "2.0",
+    id: 41,
+    method: "tools/call",
+    params: {
+      name: "browser_run_code_unsafe",
+      arguments: { code: "async () => 1" }
+    }
+  };
+  const { stdout } = await run([rce], {
+    env: { PLAYWRIGHT_MCP_ALLOW_UNSAFE: "1" }
+  });
+  const r = replies(stdout)[0];
+  check(
+    "opt-in re-enables the unsafe tool",
+    !refused(r) && r.result?.echo === "tools/call",
+    "PLAYWRIGHT_MCP_ALLOW_UNSAFE=1 forwards it"
+  );
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

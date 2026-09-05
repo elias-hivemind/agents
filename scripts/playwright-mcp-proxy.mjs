@@ -26,6 +26,15 @@ const MAX_FRAME_BYTES =
     ? configuredMaxFrame
     : DEFAULT_MAX_FRAME_BYTES;
 
+// Tools that defeat filename containment by construction: they run
+// caller-supplied code inside the server process, so no argument gate can
+// constrain where they write. @playwright/mcp ships browser_run_code_unsafe
+// in the DEFAULT capability set and documents it as RCE-equivalent. Gating
+// `filename` while leaving this reachable is not containment, so it is denied
+// unless an operator explicitly opts in.
+const UNSAFE_TOOLS = new Set(["browser_run_code_unsafe"]);
+const ALLOW_UNSAFE = process.env.PLAYWRIGHT_MCP_ALLOW_UNSAFE === "1";
+
 const [realOutDir, upstreamCmd, ...upstreamArgs] = process.argv.slice(2);
 
 if (!realOutDir || !upstreamCmd) {
@@ -161,6 +170,21 @@ function collectRefusals(frames) {
   const refusals = new Map();
   for (const m of frames) {
     if (m?.method !== "tools/call") continue;
+
+    if (UNSAFE_TOOLS.has(m.params?.name)) {
+      if (!ALLOW_UNSAFE) {
+        refusals.set(
+          m,
+          "it runs arbitrary code in the server process, which bypasses " +
+            "output-directory containment entirely (set " +
+            "PLAYWRIGHT_MCP_ALLOW_UNSAFE=1 to permit it)"
+        );
+      }
+      // Its `filename` names code to LOAD, not a path to write, so the
+      // containment check below would be applying the wrong semantics.
+      continue;
+    }
+
     const filename = m.params?.arguments?.filename;
     if (filename === undefined || filename === null) continue;
     let reason;
