@@ -1,8 +1,10 @@
 {
   "mcpServers": {
     "playwright": {
-      "command": "bash",
-      "args": ["./scripts/playwright-mcp.sh"]
+      "command": "C:\\Program Files\\Git\\bin\\bash.exe",
+      "args": [
+        "./scripts/playwright-mcp.sh"
+      ]
     }
   }
 }
