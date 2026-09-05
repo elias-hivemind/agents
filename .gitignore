@@ -141,3 +141,5 @@ dist
 
 # macOS
 .DS_Store
+# playwright mcp wrapper output
+.playwright-mcp/
