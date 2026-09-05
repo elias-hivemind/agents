@@ -8,7 +8,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PROXY = path.join(HERE, "playwright-mcp-proxy.mjs");
@@ -549,6 +549,129 @@ const refused = (r) => r.result?.isError === true;
     "upstream runs inside the output dir",
     seen?.cwd === outDir,
     seen?.cwd ?? "(absent)"
+  );
+}
+
+// 21 — the workspace upstream actually writes into follows the output dir.
+//      Test 20 pins the child's cwd, but @playwright/mcp only falls back to
+//      cwd when the client offers no roots:
+//          cwd = firstRootPath(clientRoots) ?? process.cwd()
+//      A roots-aware client (Claude Code sends the project directory) takes the
+//      other branch, so the cwd fix never applied and a plain "shot.png" still
+//      landed in the project root. Model the roots handshake, or the suite
+//      cannot see the bug -- which is exactly what happened.
+{
+  const rootsStub = path.join(tmp, "roots-stub.cjs");
+  fs.writeFileSync(
+    rootsStub,
+    [
+      'const fs = require("node:fs");',
+      'const path = require("node:path");',
+      'const url = require("node:url");',
+      'let buf = ""; let root = null;',
+      'process.stdin.on("data", (c) => {',
+      "  buf += c; let i;",
+      '  while ((i = buf.indexOf("\\n")) !== -1) {',
+      "    const line = buf.slice(0, i); buf = buf.slice(i + 1);",
+      "    if (!line.trim()) continue;",
+      "    const msg = JSON.parse(line);",
+      "    if (msg.id === 999 && msg.result) {",
+      "      const roots = msg.result.roots || [];",
+      "      root = roots.length ? url.fileURLToPath(roots[0].uri) : process.cwd();",
+      '      process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: "ready", result: { root } }) + "\\n");',
+      "      continue;",
+      "    }",
+      '    if (msg.method === "tools/call") {',
+      '      const name = (msg.params.arguments || {}).filename || "auto.png";',
+      "      const target = path.resolve(root || process.cwd(), name);",
+      "      fs.mkdirSync(path.dirname(target), { recursive: true });",
+      '      fs.writeFileSync(target, "PNG");',
+      '      process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { wrote: target } }) + "\\n");',
+      "    }",
+      "  }",
+      "});",
+      'process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: 999, method: "roots/list" }) + "\\n");'
+    ].join("\n")
+  );
+
+  /** Drive the roots-aware stub; `roots` is what the client answers with. */
+  const runRoots = (roots, filename) =>
+    new Promise((resolve) => {
+      const proc = spawn("node", [PROXY, outDir, "node", rootsStub], {
+        stdio: ["pipe", "pipe", "pipe"]
+      });
+      let result = {};
+      let acc = "";
+      let seenRoot;
+      const finish = (r) => {
+        result = r;
+        proc.kill();
+      };
+      const timer = setTimeout(() => finish({}), 15000);
+      // Windows keeps the temp dir busy until the child is really gone, so the
+      // caller must not proceed to cleanup on "killed", only on "close".
+      proc.on("close", () => {
+        clearTimeout(timer);
+        resolve(result);
+      });
+      proc.stdout.on("data", (c) => {
+        acc += c;
+        let i;
+        while ((i = acc.indexOf("\n")) !== -1) {
+          const line = acc.slice(0, i);
+          acc = acc.slice(i + 1);
+          if (!line.trim()) continue;
+          let m;
+          try {
+            m = JSON.parse(line);
+          } catch {
+            continue;
+          }
+          if (m.method === "roots/list") {
+            proc.stdin.write(
+              `${JSON.stringify({ jsonrpc: "2.0", id: m.id, result: { roots } })}\n`
+            );
+          } else if (m.id === "ready") {
+            seenRoot = m.result.root;
+            proc.stdin.write(`${JSON.stringify(shot(80, { filename }))}\n`);
+          } else if (m.id === 80) {
+            finish({ wrote: m.result?.wrote, seenRoot, refused: refused(m) });
+          }
+        }
+      });
+    });
+
+  const inside = (f) =>
+    typeof f === "string" && (f === outDir || f.startsWith(outDir + path.sep));
+
+  // The client names the project directory, as a real MCP client does.
+  const projectRoots = [{ uri: pathToFileURL(tmp).href, name: "project" }];
+  const withRoots = await runRoots(projectRoots, "bare.png");
+  check(
+    "bare name contained despite client roots",
+    inside(withRoots.wrote) && !fs.existsSync(path.join(tmp, "bare.png")),
+    withRoots.wrote ?? "(no reply)"
+  );
+  check(
+    "client roots rewritten to the output dir",
+    withRoots.seenRoot === outDir,
+    withRoots.seenRoot ?? "(absent)"
+  );
+
+  // Fallback branch: a client advertising no roots must still be contained.
+  const noRoots = await runRoots([], "bare2.png");
+  check(
+    "no-roots client falls back inside outDir",
+    inside(noRoots.wrote),
+    noRoots.wrote ?? "(no reply)"
+  );
+
+  // The rewrite must not become a way past the gate.
+  const traversal = await runRoots(projectRoots, "../escaped.png");
+  check(
+    "roots path still refuses traversal",
+    traversal.refused === true && !fs.existsSync(path.join(tmp, "escaped.png")),
+    traversal.refused ? "gate intact" : "LEAKED"
   );
 }
 
