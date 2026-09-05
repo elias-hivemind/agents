@@ -31,14 +31,38 @@ REAL_OUT_DIR="$(cd "$OUT_DIR" && pwd -P)"
 # Pinned: @playwright/mcp@0.0.80 depends on playwright 1.63.0-alpha-2026-08-31,
 # the build the conformance run was recorded against. Bump both together --
 # `npm view @playwright/mcp@<v> dependencies` reports the Playwright it carries.
-PLAYWRIGHT_MCP_PIN="npx -y @playwright/mcp@0.0.80"
+PLAYWRIGHT_MCP_PIN_PKG="@playwright/mcp@0.0.80"
 
-# Split on whitespace into an array with globbing off, so a command containing
-# a shell metacharacter is passed through as literal argv rather than expanded.
-set -f
-# shellcheck disable=SC2206  # word-splitting is the intent here
-UPSTREAM_CMD=(${PLAYWRIGHT_MCP_CMD:-$PLAYWRIGHT_MCP_PIN})
-set +f
+if [ -n "${PLAYWRIGHT_MCP_CMD:-}" ]; then
+  # Split on whitespace into an array with globbing off, so a command
+  # containing a shell metacharacter is passed through as literal argv
+  # rather than expanded.
+  set -f
+  # shellcheck disable=SC2206  # word-splitting is the intent here
+  UPSTREAM_CMD=(${PLAYWRIGHT_MCP_CMD})
+  set +f
+else
+  case "$(uname -s)" in
+    MINGW* | MSYS* | CYGWIN*)
+      # On Windows "npx" is npx.cmd, and node spawn() cannot execute a .cmd
+      # without a shell -- it fails with ENOENT. Handing it to a shell would
+      # reintroduce the metacharacter interpretation that the array form
+      # exists to prevent, so drive npm's own CLI with node instead. Built as
+      # a quoted array, so a prefix path containing spaces still works.
+      NPX_CLI="$(npm prefix -g)/node_modules/npm/bin/npx-cli.js"
+      NPX_CLI="$(cygpath -u "$NPX_CLI" 2>/dev/null || printf "%s" "$NPX_CLI")"
+      if [ -f "$NPX_CLI" ]; then
+        UPSTREAM_CMD=(node "$NPX_CLI" -y "$PLAYWRIGHT_MCP_PIN_PKG")
+      else
+        echo "playwright-mcp: npx-cli.js missing at $NPX_CLI; trying npx" >&2
+        UPSTREAM_CMD=(npx -y "$PLAYWRIGHT_MCP_PIN_PKG")
+      fi
+      ;;
+    *)
+      UPSTREAM_CMD=(npx -y "$PLAYWRIGHT_MCP_PIN_PKG")
+      ;;
+  esac
+fi
 
 PROXY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/playwright-mcp-proxy.mjs"
 
