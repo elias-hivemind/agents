@@ -38,14 +38,19 @@ process.stdin.on("data", (c) => {
 `;
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pwmcp-"));
-const outDir = fs.realpathSync(fs.mkdirSync(path.join(tmp, "out"), { recursive: true }) ?? path.join(tmp, "out"));
+const outDir = fs.realpathSync(
+  fs.mkdirSync(path.join(tmp, "out"), { recursive: true }) ??
+    path.join(tmp, "out")
+);
 const stubPath = path.join(tmp, "stub.cjs");
 fs.writeFileSync(stubPath, STUB);
 
 /** Drive the proxy with `lines`, resolve with { stdout, stderr, code }. */
 function run(lines) {
   return new Promise((resolve) => {
-    const p = spawn("node", [PROXY, outDir, "node", stubPath], { stdio: ["pipe", "pipe", "pipe"] });
+    const p = spawn("node", [PROXY, outDir, "node", stubPath], {
+      stdio: ["pipe", "pipe", "pipe"]
+    });
     let stdout = "";
     let stderr = "";
     p.stdout.on("data", (c) => (stdout += c));
@@ -74,14 +79,23 @@ const check = (name, ok, detail = "") => {
     console.log(`FAIL  ${name.padEnd(44)} ${detail}`);
   }
 };
-const replies = (out) => out.trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+const replies = (out) =>
+  out
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => JSON.parse(l));
 const refused = (r) => r.result?.isError === true;
 
 // 1 — plain basename is allowed through and lands inside the output dir.
 {
   const { stdout } = await run([shot(1, { filename: "ok.png" })]);
   const r = replies(stdout)[0];
-  check("safe basename forwarded", !refused(r) && fs.existsSync(path.join(outDir, "ok.png")), r.result?.wrote ?? "");
+  check(
+    "safe basename forwarded",
+    !refused(r) && fs.existsSync(path.join(outDir, "ok.png")),
+    r.result?.wrote ?? ""
+  );
 }
 
 // 2 — parent traversal is refused, and nothing is written outside.
@@ -89,7 +103,11 @@ const refused = (r) => r.result?.isError === true;
   const { stdout } = await run([shot(2, { filename: "../escaped.png" })]);
   const r = replies(stdout)[0];
   const leaked = fs.existsSync(path.join(path.dirname(outDir), "escaped.png"));
-  check("../ traversal refused", refused(r) && !leaked, leaked ? "LEAKED" : "no file outside outDir");
+  check(
+    "../ traversal refused",
+    refused(r) && !leaked,
+    leaked ? "LEAKED" : "no file outside outDir"
+  );
 }
 
 // 3 — absolute path is refused.
@@ -105,7 +123,10 @@ const refused = (r) => r.result?.isError === true;
 {
   const { stdout } = await run([shot(4, { filename: "shot..png" })]);
   const r = replies(stdout)[0];
-  check("dots in basename allowed", !refused(r) && fs.existsSync(path.join(outDir, "shot..png")));
+  check(
+    "dots in basename allowed",
+    !refused(r) && fs.existsSync(path.join(outDir, "shot..png"))
+  );
 }
 
 // 5 — symlink planted inside outDir cannot be used to escape.
@@ -115,39 +136,80 @@ const refused = (r) => r.result?.isError === true;
   const { stdout } = await run([shot(5, { filename: "link/via-symlink.png" })]);
   const r = replies(stdout)[0];
   const leaked = fs.existsSync(path.join(escapeTarget, "via-symlink.png"));
-  check("symlink escape refused", refused(r) && !leaked, leaked ? "LEAKED" : "realpath containment held");
+  check(
+    "symlink escape refused",
+    refused(r) && !leaked,
+    leaked ? "LEAKED" : "realpath containment held"
+  );
 }
 
 // 6 — omitted filename is allowed; the server names it inside --output-dir.
 {
   const { stdout } = await run([shot(6, {})]);
   const r = replies(stdout)[0];
-  check("omitted filename allowed", !refused(r) && String(r.result?.wrote ?? "").startsWith(outDir + path.sep));
+  check(
+    "omitted filename allowed",
+    !refused(r) && String(r.result?.wrote ?? "").startsWith(outDir + path.sep)
+  );
 }
 
 // 7 — non-screenshot calls pass through byte-for-byte.
 {
-  const msg = { jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "browser_navigate", zz: 1, aa: 2 } };
+  const msg = {
+    jsonrpc: "2.0",
+    id: 7,
+    method: "tools/call",
+    params: { name: "browser_navigate", zz: 1, aa: 2 }
+  };
   const { stdout } = await run([msg]);
   const r = replies(stdout)[0];
-  check("other tools passthrough verbatim", r.result?.raw === JSON.stringify(msg), "key order preserved");
+  check(
+    "other tools passthrough verbatim",
+    r.result?.raw === JSON.stringify(msg),
+    "key order preserved"
+  );
 }
 
 // 8 — stdout carries only JSON-RPC; stderr is clean on the success path.
 {
-  const { stdout, stderr, code } = await run([shot(8, { filename: "a.png" }), shot(9, { filename: "../b.png" })]);
-  const nonJson = stdout.trim().split("\n").filter((l) => {
-    try { JSON.parse(l); return false; } catch { return true; }
-  });
-  check("stdout carried only JSON-RPC", nonJson.length === 0, `${nonJson.length} non-JSON lines`);
-  check("stderr clean on success path", stderr === "", stderr ? JSON.stringify(stderr.slice(0, 80)) : "clean");
+  const { stdout, stderr, code } = await run([
+    shot(8, { filename: "a.png" }),
+    shot(9, { filename: "../b.png" })
+  ]);
+  const nonJson = stdout
+    .trim()
+    .split("\n")
+    .filter((l) => {
+      try {
+        JSON.parse(l);
+        return false;
+      } catch {
+        return true;
+      }
+    });
+  check(
+    "stdout carried only JSON-RPC",
+    nonJson.length === 0,
+    `${nonJson.length} non-JSON lines`
+  );
+  check(
+    "stderr clean on success path",
+    stderr === "",
+    stderr ? JSON.stringify(stderr.slice(0, 80)) : "clean"
+  );
   check("exit code propagated", code === 0, `code ${code}`);
 }
 
 // 9 — --output-dir reaches the upstream server.
 {
-  const { stdout } = await run([{ jsonrpc: "2.0", id: 10, method: "initialize", params: {} }]);
-  check("upstream receives --output-dir", replies(stdout)[0].result?.echo === "initialize", outDir);
+  const { stdout } = await run([
+    { jsonrpc: "2.0", id: 10, method: "initialize", params: {} }
+  ]);
+  check(
+    "upstream receives --output-dir",
+    replies(stdout)[0].result?.echo === "initialize",
+    outDir
+  );
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });

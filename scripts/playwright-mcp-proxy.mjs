@@ -19,7 +19,9 @@ const SCREENSHOT_TOOL = "browser_take_screenshot";
 const [realOutDir, upstreamCmd, ...upstreamArgs] = process.argv.slice(2);
 
 if (!realOutDir || !upstreamCmd) {
-  process.stderr.write("playwright-mcp-proxy: usage: <realOutDir> <cmd> [args...]\n");
+  process.stderr.write(
+    "playwright-mcp-proxy: usage: <realOutDir> <cmd> [args...]\n"
+  );
   process.exit(2);
 }
 
@@ -71,12 +73,18 @@ function containmentError(filename) {
   return null;
 }
 
-const child = spawn(upstreamCmd, [...upstreamArgs, "--output-dir", realOutDir], {
-  stdio: ["pipe", "pipe", "inherit"]
-});
+const child = spawn(
+  upstreamCmd,
+  [...upstreamArgs, "--output-dir", realOutDir],
+  {
+    stdio: ["pipe", "pipe", "inherit"]
+  }
+);
 
 child.on("error", (err) => {
-  process.stderr.write(`playwright-mcp-proxy: cannot start upstream: ${err.message}\n`);
+  process.stderr.write(
+    `playwright-mcp-proxy: cannot start upstream: ${err.message}\n`
+  );
   process.exit(1);
 });
 
@@ -123,7 +131,8 @@ pumpLines(process.stdin, child.stdin, (line) => {
     return line; // not our business to police framing errors
   }
 
-  if (msg?.method !== "tools/call" || msg?.params?.name !== SCREENSHOT_TOOL) return line;
+  if (msg?.method !== "tools/call" || msg?.params?.name !== SCREENSHOT_TOOL)
+    return line;
 
   let reason;
   try {
@@ -140,10 +149,16 @@ pumpLines(process.stdin, child.stdin, (line) => {
       id: msg.id,
       result: {
         isError: true,
-        content: [{ type: "text", text: `Refused ${SCREENSHOT_TOOL}: ${reason}.` }]
+        content: [
+          { type: "text", text: `Refused ${SCREENSHOT_TOOL}: ${reason}.` }
+        ]
       }
     };
-    writeBackpressured(process.stdin, process.stdout, Buffer.from(`${JSON.stringify(refusal)}\n`));
+    writeBackpressured(
+      process.stdin,
+      process.stdout,
+      Buffer.from(`${JSON.stringify(refusal)}\n`)
+    );
   }
   return null;
 });
@@ -156,6 +171,8 @@ for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.on(sig, () => child.kill(sig));
 }
 child.on("exit", (code, signal) => {
-  process.exitCode = signal ? 128 + (os.constants.signals[signal] ?? 15) : (code ?? 0);
+  process.exitCode = signal
+    ? 128 + (os.constants.signals[signal] ?? 15)
+    : (code ?? 0);
   process.stdout.end();
 });
