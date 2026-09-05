@@ -25,6 +25,22 @@ OUT_DIR="${PLAYWRIGHT_MCP_OUTPUT_DIR:-$PWD/.playwright-mcp}"
 mkdir -p "$OUT_DIR"
 REAL_OUT_DIR="$(cd "$OUT_DIR" && pwd -P)"
 
+# Git Bash/MSYS `pwd` prints a POSIX path (/d/agents/.playwright-mcp). MSYS
+# does rewrite such an argument on the way into a native program -- but as
+# "D:/agents/..." with forward slashes, while Node renders the filenames it
+# is compared against as "D:\agents\...". That mismatch refused every
+# legitimate name. Convert here so the handoff does not rest on MSYS's
+# rewriting at all; the proxy normalizes slash style either way.
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*)
+    if NATIVE_OUT_DIR="$(cygpath -w "$REAL_OUT_DIR" 2>/dev/null)"; then
+      REAL_OUT_DIR="$NATIVE_OUT_DIR"
+    else
+      REAL_OUT_DIR="$(cd "$OUT_DIR" && pwd -W)"
+    fi
+    ;;
+esac
+
 # Deliberately NOT forwarding "$@" into the upstream command: the wrapper owns
 # the upstream flag set so a caller cannot slip in --caps and widen the tool
 # surface. Operators who need extra flags set PLAYWRIGHT_MCP_CMD.

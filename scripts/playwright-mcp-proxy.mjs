@@ -35,14 +35,23 @@ const MAX_FRAME_BYTES =
 const UNSAFE_TOOLS = new Set(["browser_run_code_unsafe"]);
 const ALLOW_UNSAFE = process.env.PLAYWRIGHT_MCP_ALLOW_UNSAFE === "1";
 
-const [realOutDir, upstreamCmd, ...upstreamArgs] = process.argv.slice(2);
+const [outDirArg, upstreamCmd, ...upstreamArgs] = process.argv.slice(2);
 
-if (!realOutDir || !upstreamCmd) {
+if (!outDirArg || !upstreamCmd) {
   process.stderr.write(
     "playwright-mcp-proxy: usage: <realOutDir> <cmd> [args...]\n"
   );
   process.exit(2);
 }
+
+// MSYS rewrites a POSIX argument on its way into a native program, and
+// `pwd -W` reports the same shape directly: both hand Node "D:/agents/out",
+// with forward slashes. path.resolve() renders the candidate filenames below
+// as "D:\agents\out\shot.png", so comparing them against an unnormalized
+// prefix refused every legitimate name. Normalize slash style and any
+// trailing separator once, here, and hand the same value to the upstream
+// server so both sides mean one directory.
+const realOutDir = path.resolve(outDirArg);
 
 /**
  * Resolve `p` through symlinks as far as it exists on disk, then re-append the

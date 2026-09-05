@@ -464,6 +464,72 @@ const refused = (r) => r.result?.isError === true;
   );
 }
 
+// 19 — the shell launcher must hand the proxy a path the proxy can actually
+//      compare against. Tests 1-18 spawn the proxy directly with a native
+//      path, so none of them can see a launcher that computes the wrong one:
+//      on Git Bash `pwd -P` printed /d/agents/out, Node resolved that against
+//      the current drive (D:\d\agents\out), and every legitimate filename was
+//      refused while the upstream server wrote to the real directory. Drive
+//      the launcher end-to-end instead, with the stub standing in for the
+//      real server via PLAYWRIGHT_MCP_CMD.
+{
+  const LAUNCHER = path.join(HERE, "playwright-mcp.sh");
+  const launchDir = path.join(tmp, "launched");
+  fs.mkdirSync(launchDir, { recursive: true });
+
+  const runLauncher = (lines) =>
+    new Promise((resolve) => {
+      const p = spawn("bash", [LAUNCHER], {
+        stdio: ["pipe", "pipe", "pipe"],
+        env: {
+          ...process.env,
+          PLAYWRIGHT_MCP_OUTPUT_DIR: launchDir,
+          PLAYWRIGHT_MCP_CMD: `node ${stubPath}`
+        }
+      });
+      let stdout = "";
+      let stderr = "";
+      p.stdout.on("data", (c) => (stdout += c));
+      p.stderr.on("data", (c) => (stderr += c));
+      p.on("error", () => resolve({ stdout, stderr, code: 127 }));
+      p.on("close", (code) => resolve({ stdout, stderr, code }));
+      for (const l of lines) p.stdin.write(`${JSON.stringify(l)}\n`);
+      p.stdin.end();
+    });
+
+  // The launcher word-splits PLAYWRIGHT_MCP_CMD deliberately, so a stub path
+  // containing a space cannot be expressed as an upstream command at all.
+  const unusable = /\s/.test(stubPath) || /\s/.test(launchDir);
+  const first = unusable
+    ? null
+    : await runLauncher([shot(60, { filename: "launched.png" })]);
+
+  if (unusable) {
+    skipped("launcher hands the gate a usable path", "tmpdir has whitespace");
+    skipped("launcher still refuses traversal", "tmpdir has whitespace");
+  } else if (first.code === 127) {
+    skipped("launcher hands the gate a usable path", "bash not on PATH");
+    skipped("launcher still refuses traversal", "bash not on PATH");
+  } else {
+    const r = replies(first.stdout)[0];
+    check(
+      "launcher hands the gate a usable path",
+      !refused(r) && fs.existsSync(path.join(launchDir, "launched.png")),
+      r?.result?.wrote ?? (r?.result?.content?.[0]?.text ?? "").slice(0, 52)
+    );
+
+    // Guard against "fixing" the false refusal by widening the gate.
+    const bad = await runLauncher([shot(61, { filename: "../leaked.png" })]);
+    const rb = replies(bad.stdout)[0];
+    const leaked = fs.existsSync(path.join(tmp, "leaked.png"));
+    check(
+      "launcher still refuses traversal",
+      refused(rb) && !leaked,
+      leaked ? "LEAKED" : "gate intact through the launcher"
+    );
+  }
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed, ${skip} skipped`);
 
