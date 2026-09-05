@@ -23,15 +23,18 @@ process.stdin.on("data", (c) => {
     buf = buf.slice(i + 1);
     if (!line.trim()) continue;
     const msg = JSON.parse(line);
+    const outDir = process.argv[process.argv.indexOf("--output-dir") + 1];
     if (msg.method === "tools/call" && msg.params.name === "browser_take_screenshot") {
-      const outDir = process.argv[process.argv.indexOf("--output-dir") + 1];
       const name = msg.params.arguments?.filename ?? "auto.png";
-      const target = require("node:path").resolve(outDir, name);
+      // The real @playwright/mcp resolves a caller-supplied filename against
+      // its own cwd, not --output-dir. Model that: the proxy is what has to
+      // put the child in the right place.
+      const target = require("node:path").resolve(name);
       require("node:fs").mkdirSync(require("node:path").dirname(target), { recursive: true });
       require("node:fs").writeFileSync(target, "PNG");
       process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { wrote: target } }) + "\\n");
     } else {
-      process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { echo: msg.method, raw: line } }) + "\\n");
+      process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { echo: msg.method, raw: line, outDir, cwd: process.cwd() } }) + "\\n");
     }
   }
 });
@@ -241,10 +244,11 @@ const refused = (r) => r.result?.isError === true;
   const { stdout } = await run([
     { jsonrpc: "2.0", id: 10, method: "initialize", params: {} }
   ]);
+  const seen = replies(stdout)[0].result;
   check(
     "upstream receives --output-dir",
-    replies(stdout)[0].result?.echo === "initialize",
-    outDir
+    seen?.echo === "initialize" && seen?.outDir === outDir,
+    seen?.outDir ?? "(absent)"
   );
 }
 
@@ -461,6 +465,90 @@ const refused = (r) => r.result?.isError === true;
     "every filename-writing tool gated",
     allRefused && !leaked,
     `${rs.filter(refused).length}/${WRITERS.length} refused`
+  );
+}
+
+// 19 — the shell launcher must hand the proxy a path the proxy can actually
+//      compare against. Tests 1-18 spawn the proxy directly with a native
+//      path, so none of them can see a launcher that computes the wrong one:
+//      on Git Bash `pwd -P` printed /d/agents/out, Node resolved that against
+//      the current drive (D:\d\agents\out), and every legitimate filename was
+//      refused while the upstream server wrote to the real directory. Drive
+//      the launcher end-to-end instead, with the stub standing in for the
+//      real server via PLAYWRIGHT_MCP_CMD.
+{
+  const LAUNCHER = path.join(HERE, "playwright-mcp.sh");
+  const launchDir = path.join(tmp, "launched");
+  fs.mkdirSync(launchDir, { recursive: true });
+
+  const runLauncher = (lines) =>
+    new Promise((resolve) => {
+      const p = spawn("bash", [LAUNCHER], {
+        stdio: ["pipe", "pipe", "pipe"],
+        env: {
+          ...process.env,
+          PLAYWRIGHT_MCP_OUTPUT_DIR: launchDir,
+          PLAYWRIGHT_MCP_CMD: `node ${stubPath}`
+        }
+      });
+      let stdout = "";
+      let stderr = "";
+      p.stdout.on("data", (c) => (stdout += c));
+      p.stderr.on("data", (c) => (stderr += c));
+      p.on("error", () => resolve({ stdout, stderr, code: 127 }));
+      p.on("close", (code) => resolve({ stdout, stderr, code }));
+      for (const l of lines) p.stdin.write(`${JSON.stringify(l)}\n`);
+      p.stdin.end();
+    });
+
+  // The launcher word-splits PLAYWRIGHT_MCP_CMD deliberately, so a stub path
+  // containing a space cannot be expressed as an upstream command at all.
+  const unusable = /\s/.test(stubPath) || /\s/.test(launchDir);
+  const first = unusable
+    ? null
+    : await runLauncher([shot(60, { filename: "launched.png" })]);
+
+  if (unusable) {
+    skipped("launcher hands the gate a usable path", "tmpdir has whitespace");
+    skipped("launcher still refuses traversal", "tmpdir has whitespace");
+  } else if (first.code === 127) {
+    skipped("launcher hands the gate a usable path", "bash not on PATH");
+    skipped("launcher still refuses traversal", "bash not on PATH");
+  } else {
+    const r = replies(first.stdout)[0];
+    check(
+      "launcher hands the gate a usable path",
+      !refused(r) && fs.existsSync(path.join(launchDir, "launched.png")),
+      r?.result?.wrote ?? (r?.result?.content?.[0]?.text ?? "").slice(0, 52)
+    );
+
+    // Guard against "fixing" the false refusal by widening the gate.
+    const bad = await runLauncher([shot(61, { filename: "../leaked.png" })]);
+    const rb = replies(bad.stdout)[0];
+    const leaked = fs.existsSync(path.join(tmp, "leaked.png"));
+    check(
+      "launcher still refuses traversal",
+      refused(rb) && !leaked,
+      leaked ? "LEAKED" : "gate intact through the launcher"
+    );
+  }
+}
+
+// 20 — the upstream server is started INSIDE the output directory.
+//      @playwright/mcp resolves a caller-supplied `filename` against its own
+//      cwd rather than --output-dir, so a plain "shot.png" landed in the
+//      project root while the gate was busy validating it against
+//      .playwright-mcp. Gating a path the writer does not use is not
+//      containment, so the writer is started where the gate points.
+{
+  const { stdout } = await run([
+    { jsonrpc: "2.0", id: 70, method: "initialize", params: {} }
+  ]);
+  const seen = replies(stdout)[0].result;
+  check(
+    "upstream runs inside the output dir",
+    seen?.cwd === outDir,
+    seen?.cwd ?? "(absent)"
   );
 }
 

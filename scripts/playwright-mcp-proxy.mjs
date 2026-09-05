@@ -35,14 +35,23 @@ const MAX_FRAME_BYTES =
 const UNSAFE_TOOLS = new Set(["browser_run_code_unsafe"]);
 const ALLOW_UNSAFE = process.env.PLAYWRIGHT_MCP_ALLOW_UNSAFE === "1";
 
-const [realOutDir, upstreamCmd, ...upstreamArgs] = process.argv.slice(2);
+const [outDirArg, upstreamCmd, ...upstreamArgs] = process.argv.slice(2);
 
-if (!realOutDir || !upstreamCmd) {
+if (!outDirArg || !upstreamCmd) {
   process.stderr.write(
     "playwright-mcp-proxy: usage: <realOutDir> <cmd> [args...]\n"
   );
   process.exit(2);
 }
+
+// MSYS rewrites a POSIX argument on its way into a native program, and
+// `pwd -W` reports the same shape directly: both hand Node "D:/agents/out",
+// with forward slashes. path.resolve() renders the candidate filenames below
+// as "D:\agents\out\shot.png", so comparing them against an unnormalized
+// prefix refused every legitimate name. Normalize slash style and any
+// trailing separator once, here, and hand the same value to the upstream
+// server so both sides mean one directory.
+const realOutDir = path.resolve(outDirArg);
 
 /**
  * Resolve `p` through symlinks as far as it exists on disk, then re-append the
@@ -92,10 +101,19 @@ function containmentError(filename) {
   return null;
 }
 
+// @playwright/mcp resolves a caller-supplied `filename` against its own cwd,
+// not --output-dir: a plain "shot.png" landed in the project root while the
+// gate validated it against the output directory. Gating a path the writer
+// does not use is not containment, so start the writer where the gate points.
+// A relative PLAYWRIGHT_MCP_CMD would no longer resolve from the caller's
+// directory; it takes an absolute path or a name on PATH.
+fs.mkdirSync(realOutDir, { recursive: true });
+
 const child = spawn(
   upstreamCmd,
   [...upstreamArgs, "--output-dir", realOutDir],
   {
+    cwd: realOutDir,
     stdio: ["pipe", "pipe", "inherit"]
   }
 );
