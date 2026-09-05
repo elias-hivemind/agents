@@ -159,39 +159,62 @@ pumpLines(
       return line; // not our business to police framing errors
     }
 
+    // A JSON-RPC batch is an array, so msg.method is undefined and a naive
+    // guard forwards the whole frame uninspected. MCP 2025-06-18 dropped
+    // batching and @playwright/mcp ignores such frames, but the gate must not
+    // rest on an upstream's incidental behaviour -- PLAYWRIGHT_MCP_CMD can
+    // name a server that does honour them.
+    const batched = Array.isArray(msg);
+    const frames = batched ? msg : [msg];
+
     // Every filename-bearing tool is gated, not just browser_take_screenshot:
     // browser_pdf_save and friends write through the same argument.
-    if (msg?.method !== "tools/call") return line;
-    const filename = msg.params?.arguments?.filename;
-    if (filename === undefined || filename === null) return line;
-
-    let reason;
-    try {
-      reason = containmentError(filename);
-    } catch (err) {
-      reason = `filename could not be resolved: ${err.code ?? err.message}`;
+    const refusals = new Map();
+    for (const m of frames) {
+      if (m?.method !== "tools/call") continue;
+      const filename = m.params?.arguments?.filename;
+      if (filename === undefined || filename === null) continue;
+      let reason;
+      try {
+        reason = containmentError(filename);
+      } catch (err) {
+        reason = `filename could not be resolved: ${err.code ?? err.message}`;
+      }
+      if (reason !== null) refusals.set(m, reason);
     }
-    if (reason === null) return line;
 
-    // Refuse locally. A notification (no id) gets no response, only suppression.
-    if (msg.id !== undefined && msg.id !== null) {
-      const refusal = {
+    // Nothing to refuse: forward the original bytes untouched.
+    if (refusals.size === 0) return line;
+
+    // Fail closed. One bad member refuses the whole batch rather than
+    // re-serializing a filtered one, which would break byte-fidelity.
+    // A notification (no id) gets no response, only suppression.
+    const responses = [];
+    for (const m of frames) {
+      if (m?.id === undefined || m?.id === null) continue;
+      const reason = refusals.get(m);
+      responses.push({
         jsonrpc: "2.0",
-        id: msg.id,
+        id: m.id,
         result: {
           isError: true,
           content: [
             {
               type: "text",
-              text: `Refused ${msg.params?.name ?? "tools/call"}: ${reason}.`
+              text: reason
+                ? `Refused ${m.params?.name ?? "tools/call"}: ${reason}.`
+                : "Refused: another call in this batch left the output directory."
             }
           ]
         }
-      };
+      });
+    }
+
+    if (responses.length > 0) {
       writeBackpressured(
         process.stdin,
         process.stdout,
-        Buffer.from(`${JSON.stringify(refusal)}\n`)
+        Buffer.from(`${JSON.stringify(batched ? responses : responses[0])}\n`)
       );
     }
     return null;

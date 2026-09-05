@@ -271,6 +271,53 @@ const refused = (r) => r.result?.isError === true;
   );
 }
 
+// 13 — a batched tools/call cannot smuggle a traversal past the gate.
+{
+  const batch = [
+    { jsonrpc: "2.0", id: 20, method: "initialize", params: {} },
+    {
+      jsonrpc: "2.0",
+      id: 21,
+      method: "tools/call",
+      params: {
+        name: "browser_take_screenshot",
+        arguments: { filename: "../batch-escape.png" }
+      }
+    }
+  ];
+  const { stdout } = await run([batch]);
+  const out = JSON.parse(stdout.trim().split("\n")[0]);
+  const leaked = fs.existsSync(
+    path.join(path.dirname(outDir), "batch-escape.png")
+  );
+  check(
+    "batched traversal refused",
+    Array.isArray(out) &&
+      out.every((r) => r.result?.isError === true) &&
+      !leaked,
+    leaked ? "LEAKED" : "whole batch refused, fail-closed"
+  );
+}
+
+// 14 — a clean batch is still forwarded byte-for-byte.
+{
+  const batch = [
+    {
+      jsonrpc: "2.0",
+      id: 22,
+      method: "tools/call",
+      params: { name: "browser_navigate", zz: 1 }
+    }
+  ];
+  const { stdout } = await run([batch]);
+  const r = replies(stdout)[0];
+  check(
+    "clean batch forwarded verbatim",
+    r.result?.raw === JSON.stringify(batch),
+    "bytes unchanged"
+  );
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
