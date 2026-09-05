@@ -38,10 +38,13 @@ process.stdin.on("data", (c) => {
 `;
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pwmcp-"));
-const outDir = fs.realpathSync(
-  fs.mkdirSync(path.join(tmp, "out"), { recursive: true }) ??
-    path.join(tmp, "out")
-);
+const outDirPath = path.join(tmp, "out");
+// Deliberately not fs.mkdirSync's return value: on Windows that is an
+// extended-length \\?\C:\... path, which fs.realpathSync cannot
+// (it lstats the "C:" component and throws EISDIR). On Linux it is a plain
+// path, so threading it through realpath happened to work there.
+fs.mkdirSync(outDirPath, { recursive: true });
+const outDir = fs.realpathSync(outDirPath);
 const stubPath = path.join(tmp, "stub.cjs");
 fs.writeFileSync(stubPath, STUB);
 
@@ -80,6 +83,11 @@ const check = (name, ok, detail = "") => {
     fail++;
     console.log(`FAIL  ${name.padEnd(44)} ${detail}`);
   }
+};
+let skip = 0;
+const skipped = (name, why) => {
+  skip++;
+  console.log("SKIP  " + name.padEnd(44) + " " + why);
 };
 const replies = (out) =>
   out
@@ -134,15 +142,41 @@ const refused = (r) => r.result?.isError === true;
 // 5 — symlink planted inside outDir cannot be used to escape.
 {
   const escapeTarget = fs.mkdtempSync(path.join(os.tmpdir(), "pwmcp-esc-"));
-  fs.symlinkSync(escapeTarget, path.join(outDir, "link"));
-  const { stdout } = await run([shot(5, { filename: "link/via-symlink.png" })]);
-  const r = replies(stdout)[0];
-  const leaked = fs.existsSync(path.join(escapeTarget, "via-symlink.png"));
-  check(
-    "symlink escape refused",
-    refused(r) && !leaked,
-    leaked ? "LEAKED" : "realpath containment held"
-  );
+  let linked = true;
+  let linkKind = "symlink";
+  try {
+    fs.symlinkSync(escapeTarget, path.join(outDir, "link"));
+  } catch (e) {
+    // Windows refuses symlink() without Administrator or Developer Mode.
+    // An NTFS junction needs no elevation, points at a directory, and is
+    // resolved by realpath the same way -- so it is the same escape vector,
+    // and it is the one an unprivileged attacker on Windows can actually
+    // plant. Fall back to it rather than leaving the vector untested.
+    try {
+      fs.symlinkSync(escapeTarget, path.join(outDir, "link"), "junction");
+      linkKind = "junction";
+    } catch (e2) {
+      // Neither form available: skip loudly. Never count an assertion
+      // that did not run as a pass.
+      linked = false;
+      skipped(
+        "symlink escape refused",
+        "symlink() " + e.code + ", junction " + e2.code
+      );
+    }
+  }
+  if (linked) {
+    const { stdout } = await run([
+      shot(5, { filename: "link/via-symlink.png" })
+    ]);
+    const r = replies(stdout)[0];
+    const leaked = fs.existsSync(path.join(escapeTarget, "via-symlink.png"));
+    check(
+      "symlink escape refused",
+      refused(r) && !leaked,
+      leaked ? "LEAKED" : "realpath containment held (" + linkKind + ")"
+    );
+  }
 }
 
 // 6 — omitted filename is allowed; the server names it inside --output-dir.
@@ -431,5 +465,5 @@ const refused = (r) => r.result?.isError === true;
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });
-console.log(`\n${pass} passed, ${fail} failed`);
+console.log(`\n${pass} passed, ${fail} failed, ${skip} skipped`);
 process.exit(fail ? 1 : 0);
