@@ -75,12 +75,23 @@ const pendingRootsListIds = new Set();
 
 /**
  * @returns {object|null} the rewritten response, or null to forward unchanged.
- * An error reply (no `result.roots`) is left alone: upstream then treats roots
- * as empty and falls back to process.cwd(), which is already the output dir.
  */
 function rewriteRootsResponse(msg) {
   if (msg?.id === undefined || msg?.id === null) return null;
-  if (!pendingRootsListIds.delete(msg.id)) return null;
+  if (!pendingRootsListIds.has(msg.id)) return null;
+  // Only a REPLY settles the pending roots/list request. A client REQUEST that
+  // happened to reuse the server's id -- client and server number their
+  // requests in independent JSON-RPC id spaces, so a collision is ordinary, not
+  // adversarial -- must not consume the pending entry: were it deleted here, the
+  // real reply that follows would no longer be recognized and upstream would
+  // keep the project-wide roots, reopening the containment gap this rewrite
+  // exists to close. Test the id without consuming it, and only delete once a
+  // reply has actually arrived.
+  if (!("result" in msg) && !("error" in msg)) return null;
+  pendingRootsListIds.delete(msg.id);
+  // An error reply carries no roots: upstream then treats roots as empty and
+  // falls back to process.cwd(), which is already the output dir. The request
+  // is settled, so the id is consumed above, but the reply is forwarded as-is.
   if (!Array.isArray(msg?.result?.roots)) return null;
   return {
     ...msg,
