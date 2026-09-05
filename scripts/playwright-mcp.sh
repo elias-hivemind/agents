@@ -47,6 +47,9 @@ esac
 # Pinned: @playwright/mcp@0.0.80 depends on playwright 1.63.0-alpha-2026-08-31,
 # the build the conformance run was recorded against. Bump both together --
 # `npm view @playwright/mcp@<v> dependencies` reports the Playwright it carries.
+# --prefer-offline keeps a warm cache from touching the registry on every
+# launch; only the first run fetches. The exact pin is what makes that safe --
+# a cached entry can only ever be this one version.
 PLAYWRIGHT_MCP_PIN_PKG="@playwright/mcp@0.0.80"
 
 if [ -n "${PLAYWRIGHT_MCP_CMD:-}" ]; then
@@ -68,14 +71,14 @@ else
       NPX_CLI="$(npm prefix -g)/node_modules/npm/bin/npx-cli.js"
       NPX_CLI="$(cygpath -u "$NPX_CLI" 2>/dev/null || printf "%s" "$NPX_CLI")"
       if [ -f "$NPX_CLI" ]; then
-        UPSTREAM_CMD=(node "$NPX_CLI" -y "$PLAYWRIGHT_MCP_PIN_PKG")
+        UPSTREAM_CMD=(node "$NPX_CLI" --prefer-offline -y "$PLAYWRIGHT_MCP_PIN_PKG")
       else
         echo "playwright-mcp: npx-cli.js missing at $NPX_CLI; trying npx" >&2
-        UPSTREAM_CMD=(npx -y "$PLAYWRIGHT_MCP_PIN_PKG")
+        UPSTREAM_CMD=(npx --prefer-offline -y "$PLAYWRIGHT_MCP_PIN_PKG")
       fi
       ;;
     *)
-      UPSTREAM_CMD=(npx -y "$PLAYWRIGHT_MCP_PIN_PKG")
+      UPSTREAM_CMD=(npx --prefer-offline -y "$PLAYWRIGHT_MCP_PIN_PKG")
       ;;
   esac
 fi
