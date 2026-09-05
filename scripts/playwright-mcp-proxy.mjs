@@ -12,6 +12,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 const NL = Buffer.from("\n");
 
@@ -52,6 +53,43 @@ if (!outDirArg || !upstreamCmd) {
 // trailing separator once, here, and hand the same value to the upstream
 // server so both sides mean one directory.
 const realOutDir = path.resolve(outDirArg);
+
+// @playwright/mcp does not resolve a caller-supplied `filename` against
+// --output-dir. It resolves it against its "workspace", which it derives from
+// the MCP client's roots, falling back to process.cwd() only when there are
+// none:  cwd = firstRootPath(clientRoots) ?? process.cwd()
+// Claude Code and every other roots-aware client answer that handshake with the
+// project directory, so the fallback is never reached and starting the child
+// inside the output dir changes nothing -- a plain "shot.png" landed in the
+// project root while the gate validated it against the output dir. Gating a
+// base path the writer does not use is not containment.
+//
+// So answer the handshake ourselves: rewrite the client's roots/list response
+// to name the output directory. The writer's base path and the gate's then
+// agree, and upstream's own checkFile() allowed roots (output dir + workspace)
+// collapse to the output dir instead of spanning the whole project.
+const OUT_DIR_ROOT_URI = pathToFileURL(realOutDir).href;
+
+// ids of roots/list requests seen heading server -> client, awaiting a reply.
+const pendingRootsListIds = new Set();
+
+/**
+ * @returns {object|null} the rewritten response, or null to forward unchanged.
+ * An error reply (no `result.roots`) is left alone: upstream then treats roots
+ * as empty and falls back to process.cwd(), which is already the output dir.
+ */
+function rewriteRootsResponse(msg) {
+  if (msg?.id === undefined || msg?.id === null) return null;
+  if (!pendingRootsListIds.delete(msg.id)) return null;
+  if (!Array.isArray(msg?.result?.roots)) return null;
+  return {
+    ...msg,
+    result: {
+      ...msg.result,
+      roots: [{ uri: OUT_DIR_ROOT_URI, name: "playwright-mcp output" }]
+    }
+  };
+}
 
 /**
  * Resolve `p` through symlinks as far as it exists on disk, then re-append the
@@ -101,10 +139,10 @@ function containmentError(filename) {
   return null;
 }
 
-// @playwright/mcp resolves a caller-supplied `filename` against its own cwd,
-// not --output-dir: a plain "shot.png" landed in the project root while the
-// gate validated it against the output directory. Gating a path the writer
-// does not use is not containment, so start the writer where the gate points.
+// Start the writer where the gate points. This covers the fallback branch of
+// the workspace derivation above -- a client advertising no roots leaves
+// upstream on process.cwd() -- while the roots rewrite covers the branch that
+// roots-aware clients actually take. Both must land on the output dir.
 // A relative PLAYWRIGHT_MCP_CMD would no longer resolve from the caller's
 // directory; it takes an absolute path or a name on PATH.
 fs.mkdirSync(realOutDir, { recursive: true });
@@ -259,6 +297,22 @@ pumpLines(
 
     const batched = Array.isArray(msg);
     const frames = batched ? msg : [msg];
+
+    // Point upstream's workspace at the output dir. Only this frame is
+    // re-serialized -- it is a short handshake reply, not a payload -- so the
+    // byte-fidelity guarantee still holds for every tools/call.
+    if (pendingRootsListIds.size > 0) {
+      let rewrote = false;
+      const patched = frames.map((m) => {
+        const r = rewriteRootsResponse(m);
+        if (r) rewrote = true;
+        return r ?? m;
+      });
+      if (rewrote) {
+        return Buffer.from(JSON.stringify(batched ? patched : patched[0]));
+      }
+    }
+
     const refusals = collectRefusals(frames);
     if (refusals.size === 0) return line; // forward original bytes untouched
 
@@ -275,8 +329,34 @@ pumpLines(
   "client"
 );
 
-// server -> client: pure passthrough.
-pumpLines(child.stdout, process.stdout, (line) => line, "upstream");
+// server -> client: verbatim passthrough, but note the id of any roots/list
+// request so its reply can be answered with the output dir on the way back.
+pumpLines(
+  child.stdout,
+  process.stdout,
+  (line) => {
+    // Substring scan first: a screenshot frame is megabytes of base64 and must
+    // not be JSON.parsed just to look for a handshake request.
+    if (line.includes("roots/list")) {
+      try {
+        const msg = JSON.parse(line.toString("utf8"));
+        for (const m of Array.isArray(msg) ? msg : [msg]) {
+          if (
+            m?.method === "roots/list" &&
+            m?.id !== undefined &&
+            m?.id !== null
+          ) {
+            pendingRootsListIds.add(m.id);
+          }
+        }
+      } catch {
+        // Not a frame we understand; forwarding it unchanged is still correct.
+      }
+    }
+    return line;
+  },
+  "upstream"
+);
 
 process.stdin.on("end", () => child.stdin.end());
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
