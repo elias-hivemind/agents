@@ -318,6 +318,41 @@ const refused = (r) => r.result?.isError === true;
   );
 }
 
+// 15 — one response per id, exactly once. A locally-synthesised refusal must
+//      not leave the client's pending-request map desynchronised: refused
+//      frames never reach the upstream, so no id can be answered twice.
+{
+  const stream = [
+    shot(30, { filename: "keep.png" }),
+    shot(31, { filename: "../drop.png" }),
+    {
+      jsonrpc: "2.0",
+      id: 32,
+      method: "tools/call",
+      params: { name: "browser_navigate" }
+    },
+    {
+      jsonrpc: "2.0",
+      id: 33,
+      method: "tools/call",
+      params: {
+        name: "browser_pdf_save",
+        arguments: { filename: "/tmp/drop.pdf" }
+      }
+    }
+  ];
+  const { stdout } = await run(stream);
+  const ids = replies(stdout)
+    .map((r) => r.id)
+    .sort((a, b) => a - b);
+  const unique = new Set(ids);
+  check(
+    "one response per id, exactly once",
+    ids.length === 4 && unique.size === 4 && ids.join() === "30,31,32,33",
+    `ids ${ids.join(",")}`
+  );
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
