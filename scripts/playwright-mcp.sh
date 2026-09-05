@@ -17,8 +17,13 @@ REAL_OUT_DIR="$(cd "$OUT_DIR" && pwd -P)"
 # Deliberately NOT forwarding "$@" into the upstream command: the wrapper owns
 # the upstream flag set so a caller cannot slip in --caps and widen the tool
 # surface. Operators who need extra flags set PLAYWRIGHT_MCP_CMD.
-UPSTREAM_CMD="${PLAYWRIGHT_MCP_CMD:-npx -y @playwright/mcp@latest}"
+# Split on whitespace into an array with globbing off, so a command containing
+# a shell metacharacter is passed through as literal argv rather than expanded.
+set -f
+# shellcheck disable=SC2206  # word-splitting is the intent here
+UPSTREAM_CMD=(${PLAYWRIGHT_MCP_CMD:-npx -y @playwright/mcp@latest})
+set +f
 
 PROXY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/playwright-mcp-proxy.mjs"
 
-exec node "$PROXY" "$REAL_OUT_DIR" $UPSTREAM_CMD
+exec node "$PROXY" "$REAL_OUT_DIR" "${UPSTREAM_CMD[@]}"

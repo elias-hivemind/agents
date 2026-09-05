@@ -2,8 +2,8 @@
 // Containment proxy for the Playwright MCP server.
 //
 // Sits on the stdio JSON-RPC stream between client and upstream server and
-// refuses any browser_take_screenshot whose `filename` would resolve outside
-// the output directory. Every other message is forwarded byte-for-byte —
+// refuses any tools/call whose `filename` argument would resolve outside the
+// output directory. Every other message is forwarded byte-for-byte —
 // nothing is re-serialized, so key order and number formatting survive.
 //
 // Usage: playwright-mcp-proxy.mjs <realOutDir> <upstreamCmd> [args...]
@@ -14,7 +14,17 @@ import os from "node:os";
 import path from "node:path";
 
 const NL = Buffer.from("\n");
-const SCREENSHOT_TOOL = "browser_take_screenshot";
+
+// Largest single JSON-RPC frame we will buffer, in bytes. A full-page 4K
+// screenshot base64-encodes to well under this; anything larger is a peer
+// streaming without newlines, which would otherwise grow the buffer until
+// the process is OOM-killed.
+const DEFAULT_MAX_FRAME_BYTES = 33554432;
+const configuredMaxFrame = Number(process.env.PLAYWRIGHT_MCP_MAX_FRAME);
+const MAX_FRAME_BYTES =
+  Number.isInteger(configuredMaxFrame) && configuredMaxFrame > 0
+    ? configuredMaxFrame
+    : DEFAULT_MAX_FRAME_BYTES;
 
 const [realOutDir, upstreamCmd, ...upstreamArgs] = process.argv.slice(2);
 
@@ -88,6 +98,8 @@ child.on("error", (err) => {
   process.exit(1);
 });
 
+let aborted = false;
+
 /** Write `buf` to `dst`, pausing `src` until drained. */
 function writeBackpressured(src, dst, buf) {
   if (!dst.write(buf)) {
@@ -100,13 +112,26 @@ function writeBackpressured(src, dst, buf) {
  * Split `src` into newline-delimited frames and hand each to `onLine`.
  * `onLine` returns the Buffer to forward, or null to swallow the frame.
  */
-function pumpLines(src, dst, onLine) {
+function pumpLines(src, dst, onLine, label) {
   let chunks = [];
   let pending = 0;
 
   src.on("data", (chunk) => {
     chunks.push(chunk);
     pending += chunk.length;
+    if (pending > MAX_FRAME_BYTES) {
+      // Fail closed: a frame this large is a malformed or hostile peer.
+      process.stderr.write(
+        `playwright-mcp-proxy: ${label} frame exceeded ${MAX_FRAME_BYTES} bytes; aborting\n`
+      );
+      chunks = [];
+      pending = 0;
+      aborted = true;
+      process.exitCode = 1;
+      child.kill("SIGTERM");
+      src.destroy();
+      return;
+    }
     if (!chunk.includes(0x0a)) return;
 
     let buf = chunks.length === 1 ? chunks[0] : Buffer.concat(chunks, pending);
@@ -122,55 +147,75 @@ function pumpLines(src, dst, onLine) {
   });
 }
 
-// client -> server: intercept screenshot calls, forward everything else as-is.
-pumpLines(process.stdin, child.stdin, (line) => {
-  let msg;
-  try {
-    msg = JSON.parse(line.toString("utf8"));
-  } catch {
-    return line; // not our business to police framing errors
-  }
+// client -> server: intercept file-writing calls, forward everything else.
+pumpLines(
+  process.stdin,
+  child.stdin,
+  (line) => {
+    let msg;
+    try {
+      msg = JSON.parse(line.toString("utf8"));
+    } catch {
+      return line; // not our business to police framing errors
+    }
 
-  if (msg?.method !== "tools/call" || msg?.params?.name !== SCREENSHOT_TOOL)
-    return line;
+    // Every filename-bearing tool is gated, not just browser_take_screenshot:
+    // browser_pdf_save and friends write through the same argument.
+    if (msg?.method !== "tools/call") return line;
+    const filename = msg.params?.arguments?.filename;
+    if (filename === undefined || filename === null) return line;
 
-  let reason;
-  try {
-    reason = containmentError(msg.params?.arguments?.filename);
-  } catch (err) {
-    reason = `filename could not be resolved: ${err.code ?? err.message}`;
-  }
-  if (reason === null) return line;
+    let reason;
+    try {
+      reason = containmentError(filename);
+    } catch (err) {
+      reason = `filename could not be resolved: ${err.code ?? err.message}`;
+    }
+    if (reason === null) return line;
 
-  // Refuse locally. A notification (no id) gets no response, only suppression.
-  if (msg.id !== undefined && msg.id !== null) {
-    const refusal = {
-      jsonrpc: "2.0",
-      id: msg.id,
-      result: {
-        isError: true,
-        content: [
-          { type: "text", text: `Refused ${SCREENSHOT_TOOL}: ${reason}.` }
-        ]
-      }
-    };
-    writeBackpressured(
-      process.stdin,
-      process.stdout,
-      Buffer.from(`${JSON.stringify(refusal)}\n`)
-    );
-  }
-  return null;
-});
+    // Refuse locally. A notification (no id) gets no response, only suppression.
+    if (msg.id !== undefined && msg.id !== null) {
+      const refusal = {
+        jsonrpc: "2.0",
+        id: msg.id,
+        result: {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: `Refused ${msg.params?.name ?? "tools/call"}: ${reason}.`
+            }
+          ]
+        }
+      };
+      writeBackpressured(
+        process.stdin,
+        process.stdout,
+        Buffer.from(`${JSON.stringify(refusal)}\n`)
+      );
+    }
+    return null;
+  },
+  "client"
+);
 
 // server -> client: pure passthrough.
-pumpLines(child.stdout, process.stdout, (line) => line);
+pumpLines(child.stdout, process.stdout, (line) => line, "upstream");
 
 process.stdin.on("end", () => child.stdin.end());
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.on(sig, () => child.kill(sig));
 }
-child.on("exit", (code, signal) => {
+// "close" fires once the child's stdio streams are closed, "exit" can fire
+// while child.stdout still holds unread data. In practice process.stdout.end()
+// flushes what we already read, so the two are hard to tell apart here — but
+// "close" is the one whose documented contract guarantees it.
+child.on("close", (code, signal) => {
+  // Keep the abort's exit code; the SIGTERM we sent is not the real cause.
+  if (aborted) {
+    process.stdout.end();
+    return;
+  }
   process.exitCode = signal
     ? 128 + (os.constants.signals[signal] ?? 15)
     : (code ?? 0);

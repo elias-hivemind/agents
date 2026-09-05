@@ -46,16 +46,18 @@ const stubPath = path.join(tmp, "stub.cjs");
 fs.writeFileSync(stubPath, STUB);
 
 /** Drive the proxy with `lines`, resolve with { stdout, stderr, code }. */
-function run(lines) {
+function run(lines, { env, raw, stub } = {}) {
   return new Promise((resolve) => {
-    const p = spawn("node", [PROXY, outDir, "node", stubPath], {
-      stdio: ["pipe", "pipe", "pipe"]
+    const p = spawn("node", [PROXY, outDir, "node", stub ?? stubPath], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, ...env }
     });
     let stdout = "";
     let stderr = "";
     p.stdout.on("data", (c) => (stdout += c));
     p.stderr.on("data", (c) => (stderr += c));
     p.on("close", (code) => resolve({ stdout, stderr, code }));
+    if (raw) p.stdin.write(raw);
     for (const l of lines) p.stdin.write(`${JSON.stringify(l)}\n`);
     p.stdin.end();
   });
@@ -209,6 +211,63 @@ const refused = (r) => r.result?.isError === true;
     "upstream receives --output-dir",
     replies(stdout)[0].result?.echo === "initialize",
     outDir
+  );
+}
+
+// 10 — the gate covers every filename-bearing tool, not just screenshots.
+{
+  const call = {
+    jsonrpc: "2.0",
+    id: 11,
+    method: "tools/call",
+    params: { name: "browser_pdf_save", arguments: { filename: "../out.pdf" } }
+  };
+  const { stdout } = await run([call]);
+  const r = replies(stdout)[0];
+  const leaked = fs.existsSync(path.join(path.dirname(outDir), "out.pdf"));
+  check(
+    "non-screenshot filename gated",
+    refused(r) && !leaked,
+    "browser_pdf_save refused too"
+  );
+}
+
+// 11 — an unterminated frame is bounded rather than buffered until OOM.
+{
+  const { stderr, code } = await run([], {
+    env: { PLAYWRIGHT_MCP_MAX_FRAME: "1024" },
+    raw: "x".repeat(4096) // no newline: would grow without bound
+  });
+  check(
+    "oversized frame aborts",
+    code === 1 && /exceeded 1024 bytes/.test(stderr),
+    `code ${code}`
+  );
+}
+
+// 12 — a large final response survives the upstream exiting immediately after
+//      writing it. Note this passes under both child "exit" and "close", so it
+//      asserts the payload arrives intact, not the choice between those events.
+{
+  const bigStub = path.join(tmp, "big.cjs");
+  fs.writeFileSync(
+    bigStub,
+    `let b="";process.stdin.on("data",c=>{b+=c;let i;while((i=b.indexOf("\\n"))!==-1){const l=b.slice(0,i);b=b.slice(i+1);if(!l.trim())continue;const m=JSON.parse(l);process.stdout.write(JSON.stringify({jsonrpc:"2.0",id:m.id,result:{blob:"z".repeat(2000000)}})+"\\n",()=>process.exit(0));}});`
+  );
+  const { stdout } = await run(
+    [{ jsonrpc: "2.0", id: 12, method: "initialize", params: {} }],
+    { stub: bigStub }
+  );
+  let parsed = null;
+  try {
+    parsed = replies(stdout)[0];
+  } catch {
+    /* truncated -> unparseable */
+  }
+  check(
+    "large final frame arrives intact",
+    parsed?.result?.blob?.length === 2000000,
+    `${stdout.length} bytes received`
   );
 }
 
