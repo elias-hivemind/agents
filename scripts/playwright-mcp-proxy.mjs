@@ -101,10 +101,19 @@ function containmentError(filename) {
   return null;
 }
 
+// @playwright/mcp resolves a caller-supplied `filename` against its own cwd,
+// not --output-dir: a plain "shot.png" landed in the project root while the
+// gate validated it against the output directory. Gating a path the writer
+// does not use is not containment, so start the writer where the gate points.
+// A relative PLAYWRIGHT_MCP_CMD would no longer resolve from the caller's
+// directory; it takes an absolute path or a name on PATH.
+fs.mkdirSync(realOutDir, { recursive: true });
+
 const child = spawn(
   upstreamCmd,
   [...upstreamArgs, "--output-dir", realOutDir],
   {
+    cwd: realOutDir,
     stdio: ["pipe", "pipe", "inherit"]
   }
 );

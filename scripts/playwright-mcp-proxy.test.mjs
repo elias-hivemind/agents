@@ -23,15 +23,18 @@ process.stdin.on("data", (c) => {
     buf = buf.slice(i + 1);
     if (!line.trim()) continue;
     const msg = JSON.parse(line);
+    const outDir = process.argv[process.argv.indexOf("--output-dir") + 1];
     if (msg.method === "tools/call" && msg.params.name === "browser_take_screenshot") {
-      const outDir = process.argv[process.argv.indexOf("--output-dir") + 1];
       const name = msg.params.arguments?.filename ?? "auto.png";
-      const target = require("node:path").resolve(outDir, name);
+      // The real @playwright/mcp resolves a caller-supplied filename against
+      // its own cwd, not --output-dir. Model that: the proxy is what has to
+      // put the child in the right place.
+      const target = require("node:path").resolve(name);
       require("node:fs").mkdirSync(require("node:path").dirname(target), { recursive: true });
       require("node:fs").writeFileSync(target, "PNG");
       process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { wrote: target } }) + "\\n");
     } else {
-      process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { echo: msg.method, raw: line } }) + "\\n");
+      process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { echo: msg.method, raw: line, outDir, cwd: process.cwd() } }) + "\\n");
     }
   }
 });
@@ -241,10 +244,11 @@ const refused = (r) => r.result?.isError === true;
   const { stdout } = await run([
     { jsonrpc: "2.0", id: 10, method: "initialize", params: {} }
   ]);
+  const seen = replies(stdout)[0].result;
   check(
     "upstream receives --output-dir",
-    replies(stdout)[0].result?.echo === "initialize",
-    outDir
+    seen?.echo === "initialize" && seen?.outDir === outDir,
+    seen?.outDir ?? "(absent)"
   );
 }
 
@@ -528,6 +532,24 @@ const refused = (r) => r.result?.isError === true;
       leaked ? "LEAKED" : "gate intact through the launcher"
     );
   }
+}
+
+// 20 — the upstream server is started INSIDE the output directory.
+//      @playwright/mcp resolves a caller-supplied `filename` against its own
+//      cwd rather than --output-dir, so a plain "shot.png" landed in the
+//      project root while the gate was busy validating it against
+//      .playwright-mcp. Gating a path the writer does not use is not
+//      containment, so the writer is started where the gate points.
+{
+  const { stdout } = await run([
+    { jsonrpc: "2.0", id: 70, method: "initialize", params: {} }
+  ]);
+  const seen = replies(stdout)[0].result;
+  check(
+    "upstream runs inside the output dir",
+    seen?.cwd === outDir,
+    seen?.cwd ?? "(absent)"
+  );
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });
