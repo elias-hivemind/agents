@@ -245,6 +245,10 @@
         font-size: 0.9em;
       }
 
+      pre code {
+        font-size: inherit;
+      }
+
       pre {
         margin: 0;
         max-width: 100%;
@@ -536,10 +540,30 @@
         padding: var(--space-3) var(--space-4);
         border-radius: var(--radius-md);
         background: var(--surface-warm);
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
       }
 
       .install-block .comment {
-        color: var(--muted);
+        color: color-mix(in oklch, var(--muted) 70%, var(--fg));
+      }
+
+      .cmd {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: var(--space-2);
+        align-items: start;
+      }
+
+      .btn-sm {
+        min-height: 26px;
+        padding-inline: var(--space-2);
+        font-size: var(--text-sm);
+      }
+
+      .copy[data-state="copied"] {
+        border-color: color-mix(in oklch, var(--success) 40%, var(--border));
+        color: color-mix(in oklch, var(--success) 70%, var(--fg));
       }
 
       /* ---------- Demo ---------- */
@@ -548,7 +572,7 @@
         display: grid;
         grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
         gap: var(--space-8);
-        align-items: start;
+        align-items: stretch;
       }
 
       .demo-code .layer-card-body {
@@ -561,6 +585,7 @@
 
       .lifecycle {
         display: grid;
+        grid-auto-rows: 1fr;
         gap: 0;
         margin: 0;
         padding: 0;
@@ -572,13 +597,13 @@
         display: grid;
         grid-template-columns: 28px minmax(0, 1fr);
         gap: var(--space-3);
+        align-content: center;
         padding: var(--space-3) 0;
         border-top: 1px solid var(--border-soft);
       }
 
       .lifecycle li:first-child {
         border-top: 0;
-        padding-top: 0;
       }
 
       .lifecycle li::before {
@@ -631,6 +656,10 @@
         background: var(--surface-warm);
         box-shadow: var(--elev-ring);
         color: var(--fg);
+      }
+
+      .feature h3 {
+        font-size: var(--text-xl);
       }
 
       .feature p {
@@ -1003,13 +1032,33 @@
             <div class="layer-card-header">
               <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
               <span>Terminal</span>
-              <kbd aria-hidden="true">⌘K</kbd>
             </div>
             <div class="layer-card-body install-block">
-              <pre><code><span class="comment"># Create a new project</span>
+              <div class="cmd">
+                <pre><code><span class="comment"># Create a new project</span>
 npm create cloudflare@latest -- --template cloudflare/agents-starter</code></pre>
-              <pre><code><span class="comment"># Or add to an existing one</span>
+                <button
+                  class="btn btn-secondary btn-sm copy"
+                  type="button"
+                  data-copy="npm create cloudflare@latest -- --template cloudflare/agents-starter"
+                  aria-label="Copy the create-project command"
+                >
+                  Copy
+                </button>
+              </div>
+              <div class="cmd">
+                <pre><code><span class="comment"># Or add to an existing one</span>
 npm install agents</code></pre>
+                <button
+                  class="btn btn-secondary btn-sm copy"
+                  type="button"
+                  data-copy="npm install agents"
+                  aria-label="Copy the install command"
+                >
+                  Copy
+                </button>
+              </div>
+              <p class="visually-hidden" role="status" id="copy-status"></p>
             </div>
           </div>
         </div>
@@ -1478,5 +1527,40 @@ export class IntelligentAgent extends Agent {
         <p>© Cloudflare, Inc. Released under the MIT License.</p>
       </div>
     </footer>
+
+    <script>
+      (function () {
+        var status = document.getElementById("copy-status");
+        var buttons = document.querySelectorAll("button.copy");
+        if (!navigator.clipboard || !buttons.length) {
+          buttons.forEach(function (b) {
+            b.hidden = true;
+          });
+          return;
+        }
+        buttons.forEach(function (button) {
+          var timer = 0;
+          button.addEventListener("click", function () {
+            var text = button.getAttribute("data-copy") || "";
+            navigator.clipboard.writeText(text).then(
+              function () {
+                button.textContent = "Copied";
+                button.setAttribute("data-state", "copied");
+                status.textContent = "Command copied to clipboard.";
+                clearTimeout(timer);
+                timer = setTimeout(function () {
+                  button.textContent = "Copy";
+                  button.removeAttribute("data-state");
+                }, 1500);
+              },
+              function () {
+                status.textContent =
+                  "Copy failed. Select the command and copy it manually.";
+              }
+            );
+          });
+        });
+      })();
+    </script>
   </body>
 </html>
