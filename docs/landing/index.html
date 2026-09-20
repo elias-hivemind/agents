@@ -1,0 +1,1482 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cloudflare Agents SDK</title>
+    <meta
+      name="description"
+      content="Build stateful AI agents that persist, communicate over HTTP and WebSockets, schedule their own work, and hibernate when idle, on Cloudflare's network."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* Cloudflare Kumo UI — OpenDesign semantic bindings.
+       * Official sources:
+       * - https://kumo-ui.com/colors/
+       * - https://github.com/cloudflare/kumo/tree/0c5832575c99988917b81cd752002e10f3dc9c7a
+       * - packages/kumo/scripts/theme-generator/config.ts at that commit
+       *
+       * Upstream token values are adapted from @cloudflare/kumo 2.9.2,
+       * Copyright (c) 2026 Cloudflare, Inc., licensed under the MIT License.
+       * This is an OpenDesign curated integration, not an official Cloudflare package.
+       */
+
+      :root {
+        /* Kumo canvas, component base, and recessed surface. */
+        --bg: oklch(98.75% 0 0);
+        --surface: #ffffff;
+        --surface-warm: oklch(96% 0 0);
+
+        /* Kumo default and subtle text. B-slots collapse where Kumo has no matching tier. */
+        --fg: oklch(21% 0.006 285.885);
+        --fg-2: var(--fg);
+        --muted: oklch(55.6% 0 0);
+        --meta: var(--muted);
+
+        /* Kumo line and hairline roles. */
+        --border: oklch(14.5% 0 0 / 0.1);
+        --border-soft: oklch(93.5% 0 0);
+
+        /* Kumo brand background and its documented hover state. */
+        --accent: oklch(0.5772 0.2324 260);
+        --accent-on: #ffffff;
+        --accent-hover: oklch(48.8% 0.243 264.376);
+        --accent-active: var(--accent-hover);
+
+        /* Kumo solid semantic indicators. */
+        --success: oklch(59.6% 0.145 163.225);
+        --warn: oklch(73.9% 0.177 58.2);
+        --danger: oklch(63.7% 0.237 25.331);
+
+        /* Inter is used by Kumo's official documentation and Figma resources. */
+        --font-display: "Inter", ui-sans-serif, system-ui, sans-serif;
+        --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+        --font-mono:
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", "Courier New", monospace;
+
+        /* Kumo's compact 12/13/14/16 scale, extended with its inherited Tailwind heading steps. */
+        --text-xs: 12px;
+        --text-sm: 13px;
+        --text-base: 14px;
+        --text-lg: 16px;
+        --text-xl: 20px;
+        --text-2xl: 24px;
+        --text-3xl: 30px;
+        --text-4xl: 36px;
+        --leading-body: 1.5;
+        --leading-tight: 1.2;
+        --tracking-display: 0;
+
+        /* OpenDesign compatibility bindings aligned to Kumo's 4px utility rhythm. */
+        --space-1: 4px;
+        --space-2: 8px;
+        --space-3: 12px;
+        --space-4: 16px;
+        --space-5: 20px;
+        --space-6: 24px;
+        --space-8: 32px;
+        --space-12: 48px;
+        --section-y-desktop: 64px;
+        --section-y-tablet: 48px;
+        --section-y-phone: 32px;
+
+        /* Kumo control radii map to Tailwind sm/md/lg; pills stay fully rounded. */
+        --radius-sm: 4px;
+        --radius-md: 6px;
+        --radius-lg: 8px;
+        --radius-pill: 9999px;
+
+        /* Ring-led elevation mirrors Kumo LayerCard composition. */
+        --elev-flat: none;
+        --elev-ring: 0 0 0 1px var(--border);
+        --elev-raised: 0 1px 2px 0 oklch(0% 0 0 / 0.08);
+        --focus-ring: 0 0 0 2px oklch(15% 0 0);
+
+        /* 150ms states/dialogs and the 250ms sidebar motion are upstream values. */
+        --motion-fast: 150ms;
+        --motion-base: 250ms;
+        --ease-standard: cubic-bezier(0.77, 0, 0.175, 1);
+
+        /* OpenDesign layout bindings preserve Kumo's compact dashboard density. */
+        --container-max: 1200px;
+        --container-gutter-desktop: 24px;
+        --container-gutter-tablet: 16px;
+        --container-gutter-phone: 12px;
+
+        /* Template parameters (saas-landing): hero_density, accent_strength. */
+        --hero-density: 96px;
+        --accent-strength: 1;
+      }
+
+      /* Kumo uses data-mode="dark". The data-theme selector keeps generated Open
+       * Design artifacts compatible with the repository's standard theme hook. */
+      [data-theme="dark"],
+      [data-mode="dark"] {
+        --bg: oklch(10% 0 0);
+        --surface: oklch(17% 0 0);
+        --surface-warm: oklch(15% 0 0);
+        --fg: oklch(97% 0 0);
+        --fg-2: var(--fg);
+        --muted: oklch(70.8% 0 0);
+        --meta: var(--muted);
+        --border: oklch(32% 0 0);
+        --border-soft: oklch(26.9% 0 0);
+        --accent: color-mix(in oklch, oklch(0.5772 0.2324 260), black 10%);
+        --accent-on: #ffffff;
+        --accent-hover: oklch(48.8% 0.243 264.376);
+        --accent-active: var(--accent-hover);
+        --success: oklch(76.5% 0.177 163.223);
+        --warn: oklch(64.5% 0.168 50);
+        --danger: oklch(57.7% 0.245 27.325);
+        --elev-raised: 0 1px 2px 0 oklch(0% 0 0 / 0.3);
+        --focus-ring: 0 0 0 2px oklch(93.5% 0 0);
+      }
+
+      /* Follow the OS preference when no explicit mode is set on <html>. */
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-mode="light"]):not([data-theme="light"]) {
+          --bg: oklch(10% 0 0);
+          --surface: oklch(17% 0 0);
+          --surface-warm: oklch(15% 0 0);
+          --fg: oklch(97% 0 0);
+          --fg-2: var(--fg);
+          --muted: oklch(70.8% 0 0);
+          --meta: var(--muted);
+          --border: oklch(32% 0 0);
+          --border-soft: oklch(26.9% 0 0);
+          --accent: color-mix(in oklch, oklch(0.5772 0.2324 260), black 10%);
+          --accent-on: #ffffff;
+          --accent-hover: oklch(48.8% 0.243 264.376);
+          --accent-active: var(--accent-hover);
+          --success: oklch(76.5% 0.177 163.223);
+          --warn: oklch(64.5% 0.168 50);
+          --danger: oklch(57.7% 0.245 27.325);
+          --elev-raised: 0 1px 2px 0 oklch(0% 0 0 / 0.3);
+          --focus-ring: 0 0 0 2px oklch(93.5% 0 0);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        :root {
+          --motion-fast: 0ms;
+          --motion-base: 0ms;
+        }
+      }
+
+      /* ---------- Base ---------- */
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html {
+        color-scheme: light dark;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: var(--font-body);
+        font-size: var(--text-base);
+        line-height: var(--leading-body);
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        font-family: var(--font-display);
+        font-weight: 600;
+        line-height: var(--leading-tight);
+        letter-spacing: var(--tracking-display);
+      }
+
+      h1 {
+        font-size: var(--text-4xl);
+      }
+
+      h2 {
+        font-size: var(--text-2xl);
+      }
+
+      h3 {
+        font-size: var(--text-lg);
+      }
+
+      p {
+        margin: 0;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: underline;
+        text-decoration-color: var(--muted);
+        text-underline-offset: 3px;
+      }
+
+      a:hover {
+        text-decoration-color: currentcolor;
+      }
+
+      :focus-visible {
+        outline: none;
+        box-shadow: var(--focus-ring);
+        border-radius: var(--radius-sm);
+      }
+
+      code,
+      kbd,
+      pre {
+        font-family: var(--font-mono);
+      }
+
+      code {
+        font-size: 0.9em;
+      }
+
+      pre {
+        margin: 0;
+        max-width: 100%;
+        min-width: 0;
+        overflow-x: auto;
+        font-size: var(--text-sm);
+        line-height: 1.6;
+        tab-size: 2;
+      }
+
+      kbd {
+        display: inline-block;
+        min-width: 20px;
+        padding: 0 var(--space-1);
+        border: 1px solid var(--border);
+        border-bottom-width: 2px;
+        border-radius: var(--radius-sm);
+        background: var(--surface);
+        font-size: var(--text-xs);
+        line-height: 18px;
+        text-align: center;
+      }
+
+      svg {
+        display: block;
+      }
+
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
+
+      .skip-link {
+        position: absolute;
+        left: var(--space-3);
+        top: -100px;
+        z-index: 10;
+        padding: var(--space-2) var(--space-3);
+        border-radius: var(--radius-lg);
+        background: var(--surface);
+        box-shadow: var(--elev-ring);
+      }
+
+      .skip-link:focus-visible {
+        top: var(--space-3);
+      }
+
+      /* ---------- Layout ---------- */
+
+      .container {
+        width: 100%;
+        max-width: var(--container-max);
+        margin-inline: auto;
+        padding-inline: var(--container-gutter-desktop);
+      }
+
+      .section {
+        padding-block: var(--section-y-desktop);
+      }
+
+      .section + .section {
+        border-top: 1px solid var(--border-soft);
+      }
+
+      .section-head {
+        display: grid;
+        gap: var(--space-2);
+        max-width: 65ch;
+        margin-bottom: var(--space-8);
+      }
+
+      .eyebrow {
+        color: var(--muted);
+        font-size: var(--text-sm);
+        font-weight: 500;
+      }
+
+      .lead {
+        color: var(--muted);
+        font-size: var(--text-lg);
+        max-width: 60ch;
+      }
+
+      /* ---------- Controls (Kumo button contract) ---------- */
+
+      .btn {
+        display: inline-flex;
+        min-height: 36px;
+        align-items: center;
+        justify-content: center;
+        gap: var(--space-2);
+        padding-inline: var(--space-3);
+        border: 1px solid transparent;
+        border-radius: var(--radius-lg);
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-weight: 500;
+        text-decoration: none;
+        cursor: pointer;
+        transition: transform var(--motion-fast);
+      }
+
+      .btn:active {
+        transform: translateY(1px);
+      }
+
+      .btn:focus-visible {
+        outline: none;
+        box-shadow: var(--focus-ring);
+        border-radius: var(--radius-lg);
+      }
+
+      .btn-primary {
+        background: var(--accent);
+        color: var(--accent-on);
+        opacity: var(--accent-strength);
+      }
+
+      .btn-primary:hover,
+      .btn-primary:active {
+        background: var(--accent-hover);
+      }
+
+      .btn-secondary {
+        border-color: var(--border);
+        background: var(--surface);
+        color: var(--fg);
+      }
+
+      .btn-secondary:hover {
+        background: var(--surface-warm);
+      }
+
+      .btn-lg {
+        min-height: 40px;
+        padding-inline: var(--space-4);
+      }
+
+      /* ---------- Header ---------- */
+
+      .site-header {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        background: color-mix(in oklch, var(--bg) 92%, transparent);
+        backdrop-filter: blur(8px);
+        border-bottom: 1px solid var(--border-soft);
+      }
+
+      .site-header .container {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-4);
+        min-height: 56px;
+      }
+
+      .wordmark {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-2);
+        font-weight: 600;
+        text-decoration: none;
+      }
+
+      .wordmark-badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 20px;
+        padding-inline: var(--space-2);
+        border-radius: var(--radius-pill);
+        background: var(--surface-warm);
+        box-shadow: var(--elev-ring);
+        color: var(--muted);
+        font-size: var(--text-xs);
+        font-weight: 500;
+      }
+
+      .site-nav ul {
+        display: flex;
+        align-items: center;
+        gap: var(--space-5);
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .site-nav a {
+        text-decoration: none;
+        color: var(--muted);
+        font-weight: 500;
+      }
+
+      .site-nav a:hover {
+        color: var(--fg);
+      }
+
+      /* ---------- Hero ---------- */
+
+      .hero {
+        padding-block: var(--hero-density);
+      }
+
+      .hero-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+        gap: var(--space-12);
+        align-items: center;
+      }
+
+      .hero-copy {
+        display: grid;
+        gap: var(--space-4);
+      }
+
+      .hero-copy h1 {
+        max-width: 18ch;
+      }
+
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-3);
+        margin-top: var(--space-2);
+      }
+
+      .hero-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-4);
+        color: var(--muted);
+        font-size: var(--text-sm);
+      }
+
+      .hero-meta span {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-2);
+      }
+
+      /* ---------- Layer card (Kumo LayerCard contract) ---------- */
+
+      .layer-card {
+        min-width: 0;
+        border-radius: var(--radius-lg);
+        background: var(--surface);
+        box-shadow: var(--elev-ring), var(--elev-raised);
+      }
+
+      .layer-card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-3);
+        padding: var(--space-3) var(--space-4);
+        border-bottom: 1px solid var(--border-soft);
+        color: var(--muted);
+        font-size: var(--text-sm);
+      }
+
+      .layer-card-body {
+        padding: var(--space-4);
+      }
+
+      .dots {
+        display: inline-flex;
+        gap: 6px;
+      }
+
+      .dots i {
+        width: 10px;
+        height: 10px;
+        border-radius: var(--radius-pill);
+        background: var(--border);
+      }
+
+      .install-block {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--space-3);
+      }
+
+      .install-block pre {
+        padding: var(--space-3) var(--space-4);
+        border-radius: var(--radius-md);
+        background: var(--surface-warm);
+      }
+
+      .install-block .comment {
+        color: var(--muted);
+      }
+
+      /* ---------- Demo ---------- */
+
+      .demo-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+        gap: var(--space-8);
+        align-items: start;
+      }
+
+      .demo-code .layer-card-body {
+        padding: 0;
+      }
+
+      .demo-code pre {
+        padding: var(--space-4);
+      }
+
+      .lifecycle {
+        display: grid;
+        gap: 0;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        counter-reset: step;
+      }
+
+      .lifecycle li {
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr);
+        gap: var(--space-3);
+        padding: var(--space-3) 0;
+        border-top: 1px solid var(--border-soft);
+      }
+
+      .lifecycle li:first-child {
+        border-top: 0;
+        padding-top: 0;
+      }
+
+      .lifecycle li::before {
+        counter-increment: step;
+        content: counter(step);
+        display: inline-flex;
+        width: 28px;
+        height: 28px;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-pill);
+        background: var(--surface-warm);
+        box-shadow: var(--elev-ring);
+        font-size: var(--text-xs);
+        font-weight: 500;
+        color: var(--muted);
+      }
+
+      .lifecycle h3 {
+        font-size: var(--text-base);
+        font-weight: 500;
+      }
+
+      .lifecycle p {
+        color: var(--muted);
+      }
+
+      /* ---------- Features ---------- */
+
+      .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: var(--space-4);
+      }
+
+      .feature {
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+        gap: var(--space-3);
+        padding: var(--space-5) var(--space-4);
+      }
+
+      .feature-icon {
+        width: 32px;
+        height: 32px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-md);
+        background: var(--surface-warm);
+        box-shadow: var(--elev-ring);
+        color: var(--fg);
+      }
+
+      .feature p {
+        color: var(--muted);
+      }
+
+      .feature code {
+        display: inline-block;
+        padding: 0 var(--space-1);
+        border-radius: var(--radius-sm);
+        background: var(--surface-warm);
+        color: var(--fg);
+        white-space: nowrap;
+      }
+
+      .feature-api {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-1);
+        font-size: var(--text-sm);
+      }
+
+      /* ---------- Status ---------- */
+
+      .status-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: var(--text-base);
+      }
+
+      .status-table caption {
+        text-align: left;
+        padding-bottom: var(--space-3);
+        color: var(--muted);
+        font-size: var(--text-sm);
+      }
+
+      .status-table th,
+      .status-table td {
+        padding: var(--space-3) var(--space-4);
+        border-top: 1px solid var(--border-soft);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      .status-table thead th {
+        border-top: 0;
+        color: var(--muted);
+        font-size: var(--text-sm);
+        font-weight: 500;
+      }
+
+      .status-table td:first-child {
+        font-weight: 500;
+      }
+
+      .status-table td:nth-child(2) {
+        color: var(--muted);
+      }
+
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-2);
+        min-height: 22px;
+        padding-inline: var(--space-2);
+        border-radius: var(--radius-pill);
+        font-size: var(--text-xs);
+        font-weight: 500;
+        white-space: nowrap;
+      }
+
+      .status-badge::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: var(--radius-pill);
+        background: currentcolor;
+      }
+
+      .status-ready {
+        background: color-mix(in oklch, var(--success) 14%, var(--surface));
+        color: color-mix(in oklch, var(--success) 70%, var(--fg));
+      }
+
+      .status-soon {
+        background: color-mix(in oklch, var(--warn) 18%, var(--surface));
+        color: color-mix(in oklch, var(--warn) 55%, var(--fg));
+      }
+
+      /* ---------- Footer CTA ---------- */
+
+      .cta-band {
+        background: var(--accent);
+        color: var(--accent-on);
+      }
+
+      .cta-band .container {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-5);
+        padding-block: var(--space-12);
+      }
+
+      .cta-band h2 {
+        margin-bottom: var(--space-1);
+      }
+
+      .cta-band p {
+        color: color-mix(in oklch, var(--accent-on) 82%, transparent);
+      }
+
+      .cta-band .btn {
+        background: var(--accent-on);
+        color: var(--accent);
+      }
+
+      .cta-band .btn:hover {
+        background: color-mix(in oklch, var(--accent-on) 90%, var(--accent));
+      }
+
+      .cta-band .btn:focus-visible {
+        box-shadow: 0 0 0 2px var(--accent-on);
+      }
+
+      /* ---------- Footer ---------- */
+
+      .site-footer {
+        padding-block: var(--space-6);
+        border-top: 1px solid var(--border-soft);
+        color: var(--muted);
+        font-size: var(--text-sm);
+      }
+
+      .site-footer .container {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-3);
+      }
+
+      .site-footer ul {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-4);
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      /* ---------- Responsive ---------- */
+
+      @media (max-width: 1024px) {
+        .container {
+          padding-inline: var(--container-gutter-tablet);
+        }
+
+        .section {
+          padding-block: var(--section-y-tablet);
+        }
+
+        .hero {
+          padding-block: calc(var(--hero-density) * 0.75);
+        }
+
+        .hero-grid,
+        .demo-grid {
+          grid-template-columns: minmax(0, 1fr);
+          gap: var(--space-8);
+        }
+
+        .feature-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 640px) {
+        .container {
+          padding-inline: var(--container-gutter-phone);
+        }
+
+        .section {
+          padding-block: var(--section-y-phone);
+        }
+
+        .hero {
+          padding-block: calc(var(--hero-density) * 0.5);
+        }
+
+        h1 {
+          font-size: var(--text-3xl);
+        }
+
+        .site-header .container {
+          flex-wrap: wrap;
+          padding-block: var(--space-2);
+        }
+
+        .site-nav ul {
+          flex-wrap: wrap;
+          gap: var(--space-3);
+        }
+
+        .site-nav li.optional,
+        .wordmark-badge {
+          display: none;
+        }
+
+        .feature-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+
+        .status-table thead {
+          display: none;
+        }
+
+        .status-table tr {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          padding-block: var(--space-3);
+          border-top: 1px solid var(--border-soft);
+        }
+
+        .status-table td {
+          padding: 0;
+          border-top: 0;
+        }
+
+        .status-table td:nth-child(2) {
+          grid-column: 1 / -1;
+          padding-top: var(--space-1);
+        }
+
+        .cta-band .container {
+          padding-block: var(--space-8);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header" data-od-id="site-header">
+      <div class="container">
+        <a class="wordmark" href="#main" data-od-id="wordmark">
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.75"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path
+              d="M7 17.5a4.5 4.5 0 0 1-.7-8.95A6 6 0 0 1 17.8 9.6 3.9 3.9 0 0 1 17 17.5H7Z"
+            />
+          </svg>
+          <span>agents</span>
+          <span class="wordmark-badge">by Cloudflare</span>
+        </a>
+        <nav class="site-nav" aria-label="Primary" data-od-id="site-nav">
+          <ul>
+            <li><a href="#quickstart">Quickstart</a></li>
+            <li><a href="#features">Features</a></li>
+            <li class="optional"><a href="#status">Status</a></li>
+            <li>
+              <a
+                class="btn btn-secondary"
+                href="https://github.com/cloudflare/agents"
+                rel="noopener"
+                >GitHub</a
+              >
+            </li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero" aria-labelledby="hero-title" data-od-id="hero">
+        <div class="container hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow" data-od-id="hero-eyebrow">
+              Cloudflare Agents SDK
+            </p>
+            <h1 id="hero-title" data-od-id="hero-title">
+              Agents that persist, think, and act at the edge
+            </h1>
+            <p class="lead" data-od-id="hero-subhead">
+              A framework for stateful AI agents on Cloudflare's network. Each
+              agent keeps its own state, talks over HTTP and WebSockets,
+              schedules its own work, and hibernates when idle.
+            </p>
+            <div class="hero-actions" data-od-id="hero-actions">
+              <a class="btn btn-primary btn-lg" href="#quickstart"
+                >Create an agent</a
+              >
+              <a
+                class="btn btn-secondary btn-lg"
+                href="https://github.com/cloudflare/agents/blob/main/packages/agents/README.md"
+                rel="noopener"
+                >Read the framework docs</a
+              >
+            </div>
+            <div class="hero-meta" data-od-id="hero-meta">
+              <span>
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.75"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M12 3 4 7v5c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V7l-8-4Z"
+                  />
+                </svg>
+                MIT licensed
+              </span>
+              <span>
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.75"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <path d="M7 9h10M7 13h6" />
+                </svg>
+                TypeScript first
+              </span>
+              <span>
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.75"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="12" cy="12" r="9" />
+                  <path
+                    d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"
+                  />
+                </svg>
+                Runs on Workers and Durable Objects
+              </span>
+            </div>
+          </div>
+
+          <div class="layer-card" id="quickstart" data-od-id="hero-install">
+            <div class="layer-card-header">
+              <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span>Terminal</span>
+              <kbd aria-hidden="true">⌘K</kbd>
+            </div>
+            <div class="layer-card-body install-block">
+              <pre><code><span class="comment"># Create a new project</span>
+npm create cloudflare@latest -- --template cloudflare/agents-starter</code></pre>
+              <pre><code><span class="comment"># Or add to an existing one</span>
+npm install agents</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="demo-title" data-od-id="demo">
+        <div class="container">
+          <div class="section-head">
+            <p class="eyebrow">Your first agent</p>
+            <h2 id="demo-title">
+              One class. State, transport, and schedule included.
+            </h2>
+            <p class="lead">
+              Extend <code>Agent</code>, implement the handlers you need, and
+              the runtime takes care of instance identity, storage, and wake-up.
+            </p>
+          </div>
+
+          <div class="demo-grid">
+            <div class="layer-card demo-code" data-od-id="demo-code">
+              <div class="layer-card-header">
+                <span>src/agent.ts</span>
+                <span>TypeScript</span>
+              </div>
+              <div class="layer-card-body">
+                <pre><code>import { Agent } from "agents";
+
+export class IntelligentAgent extends Agent {
+  async onRequest(request: Request) {
+    return new Response("Ready to assist.");
+  }
+
+  async onConnect(connection) {
+    connection.send(JSON.stringify(this.state));
+  }
+
+  async evolve(newInsight) {
+    this.setState({
+      ...this.state,
+      insights: [...(this.state.insights || []), newInsight]
+    });
+  }
+
+  async initialize() {
+    this.schedule(10, "quickInsight", { focus: "patterns" });
+    this.schedule("0 0 * * *", "dailySynthesis");
+  }
+}</code></pre>
+              </div>
+            </div>
+
+            <ol class="lifecycle" data-od-id="demo-lifecycle">
+              <li>
+                <div>
+                  <h3>A request or connection arrives</h3>
+                  <p>
+                    Route by name with <code>getAgentByName</code> or create a
+                    fresh instance. The same agent answers HTTP and WebSocket
+                    traffic.
+                  </p>
+                </div>
+              </li>
+              <li>
+                <div>
+                  <h3>State updates and syncs</h3>
+                  <p>
+                    <code>setState</code> persists to SQLite-backed storage and
+                    fans out to every connected client through
+                    <code>onStateUpdate</code>.
+                  </p>
+                </div>
+              </li>
+              <li>
+                <div>
+                  <h3>Work is scheduled</h3>
+                  <p>
+                    <code>schedule</code> accepts a delay in seconds, a cron
+                    expression, or a <code>Date</code>. Callbacks are ordinary
+                    methods on the class.
+                  </p>
+                </div>
+              </li>
+              <li>
+                <div>
+                  <h3>The agent hibernates</h3>
+                  <p>
+                    Idle agents release compute and wake on the next message,
+                    request, or scheduled task, with state intact.
+                  </p>
+                </div>
+              </li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="section"
+        id="features"
+        aria-labelledby="features-title"
+        data-od-id="features"
+      >
+        <div class="container">
+          <div class="section-head">
+            <p class="eyebrow">What ships in the package</p>
+            <h2 id="features-title">Everything an agent needs to stay alive</h2>
+          </div>
+
+          <div class="feature-grid">
+            <article class="feature layer-card" data-od-id="feature-state">
+              <span class="feature-icon" aria-hidden="true">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.75"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <ellipse cx="12" cy="6" rx="8" ry="3" />
+                  <path
+                    d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"
+                  />
+                </svg>
+              </span>
+              <h3>Persistent state</h3>
+              <p>
+                Each agent owns a durable, SQLite-backed state object. Updates
+                are broadcast to connected clients and delivered to your handler
+                with their source.
+              </p>
+              <div class="feature-api">
+                <code>setState()</code><code>onStateUpdate()</code>
+              </div>
+            </article>
+
+            <article class="feature layer-card" data-od-id="feature-transport">
+              <span class="feature-icon" aria-hidden="true">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.75"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M4 12h16M4 12l4-4M4 12l4 4M20 12l-4-4M20 12l-4 4" />
+                </svg>
+              </span>
+              <h3>HTTP and WebSockets</h3>
+              <p>
+                Handle one-shot requests and long-lived connections from the
+                same class. Connections survive across messages without extra
+                plumbing.
+              </p>
+              <div class="feature-api">
+                <code>onRequest()</code><code>onConnect()</code
+                ><code>onMessage()</code>
+              </div>
+            </article>
+
+            <article class="feature layer-card" data-od-id="feature-schedule">
+              <span class="feature-icon" aria-hidden="true">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.75"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M12 7v5l3 2" />
+                </svg>
+              </span>
+              <h3>Scheduling</h3>
+              <p>
+                Schedule a method by delay, cron expression, or absolute date.
+                The agent wakes to run it even if nothing else is connected.
+              </p>
+              <div class="feature-api">
+                <code>schedule(10, …)</code
+                ><code>schedule("0 0 * * *", …)</code>
+              </div>
+            </article>
+
+            <article class="feature layer-card" data-od-id="feature-react">
+              <span class="feature-icon" aria-hidden="true">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.75"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <circle cx="12" cy="12" r="2" />
+                  <ellipse cx="12" cy="12" rx="10" ry="4" />
+                  <ellipse
+                    cx="12"
+                    cy="12"
+                    rx="10"
+                    ry="4"
+                    transform="rotate(60 12 12)"
+                  />
+                  <ellipse
+                    cx="12"
+                    cy="12"
+                    rx="10"
+                    ry="4"
+                    transform="rotate(120 12 12)"
+                  />
+                </svg>
+              </span>
+              <h3>React hooks</h3>
+              <p>
+                Connect a component to an agent, subscribe to state, and send
+                messages with one hook. A vanilla client covers everything else.
+              </p>
+              <div class="feature-api">
+                <code>useAgent()</code><code>AgentClient</code>
+              </div>
+            </article>
+
+            <article class="feature layer-card" data-od-id="feature-chat">
+              <span class="feature-icon" aria-hidden="true">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.75"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path
+                    d="M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8l-5 4v-4H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"
+                  />
+                </svg>
+              </span>
+              <h3>AI chat, streamed</h3>
+              <p>
+                <code>AIChatAgent</code> stores message history and streams
+                model output through the Vercel AI SDK. Pair it with the
+                matching React hook for a working chat UI.
+              </p>
+              <div class="feature-api">
+                <code>onChatMessage()</code><code>useAgentChat()</code>
+              </div>
+            </article>
+
+            <article class="feature layer-card" data-od-id="feature-mcp">
+              <span class="feature-icon" aria-hidden="true">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.75"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1" />
+                  <path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" />
+                </svg>
+              </span>
+              <h3>MCP server and client</h3>
+              <p>
+                Expose tools to AI assistants over the Model Context Protocol,
+                or consume tools from other MCP servers inside the same agent.
+              </p>
+              <div class="feature-api">
+                <code>agents/mcp</code>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="section"
+        id="status"
+        aria-labelledby="status-title"
+        data-od-id="status"
+      >
+        <div class="container">
+          <div class="section-head">
+            <p class="eyebrow">Project status</p>
+            <h2 id="status-title">
+              Actively evolving. Here is where each piece stands.
+            </h2>
+            <p class="lead">
+              The framework is in active development. Ship on the parts marked
+              ready, and follow the repository for the rest.
+            </p>
+          </div>
+
+          <div class="layer-card" data-od-id="status-table">
+            <table class="status-table">
+              <caption>
+                Focus areas as listed in the project README
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Capability</th>
+                  <th scope="col">Notes</th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Core agent framework</td>
+                  <td>State management, lifecycle, instance routing</td>
+                  <td>
+                    <span class="status-badge status-ready">Ready for use</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>Real-time WebSocket communication</td>
+                  <td>Persistent connections with hibernation support</td>
+                  <td>
+                    <span class="status-badge status-ready">Ready for use</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>HTTP endpoints and routing</td>
+                  <td>Request handling on the agent class</td>
+                  <td>
+                    <span class="status-badge status-ready">Ready for use</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>React integration hooks</td>
+                  <td>Connection, state sync, and chat hooks</td>
+                  <td>
+                    <span class="status-badge status-ready">Ready for use</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>Basic AI chat capabilities</td>
+                  <td>Streaming chat agent with stored history</td>
+                  <td>
+                    <span class="status-badge status-ready">Ready for use</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>Advanced memory systems</td>
+                  <td>Long-term recall beyond the state object</td>
+                  <td>
+                    <span class="status-badge status-soon">In development</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>WebRTC for audio and video</td>
+                  <td>Media sessions terminated at the agent</td>
+                  <td>
+                    <span class="status-badge status-soon">In development</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>Email integration</td>
+                  <td>Agents that receive and send mail</td>
+                  <td>
+                    <span class="status-badge status-soon">In development</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>Evaluation framework</td>
+                  <td>Repeatable checks on agent behaviour</td>
+                  <td>
+                    <span class="status-badge status-soon">In development</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>Enhanced observability</td>
+                  <td>Tracing and metrics for long-running agents</td>
+                  <td>
+                    <span class="status-badge status-soon">In development</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>Self-hosting guide</td>
+                  <td>Running the framework outside Cloudflare</td>
+                  <td>
+                    <span class="status-badge status-soon">In development</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <section
+      class="cta-band"
+      aria-labelledby="cta-title"
+      data-od-id="footer-cta"
+    >
+      <div class="container">
+        <div>
+          <h2 id="cta-title">Deploy your first agent</h2>
+          <p>
+            One command scaffolds a project with an agent, a Worker, and a React
+            client.
+          </p>
+        </div>
+        <a
+          class="btn btn-lg"
+          href="https://github.com/cloudflare/agents-starter"
+          rel="noopener"
+          >Use the starter template</a
+        >
+      </div>
+    </section>
+
+    <footer class="site-footer" data-od-id="site-footer">
+      <div class="container">
+        <ul>
+          <li>
+            <a
+              href="https://github.com/cloudflare/agents/blob/main/packages/agents/README.md"
+              rel="noopener"
+              >Core framework</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://github.com/cloudflare/agents/tree/main/guides/anthropic-patterns"
+              rel="noopener"
+              >Agent patterns</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://github.com/cloudflare/agents/tree/main/guides/human-in-the-loop"
+              rel="noopener"
+              >Human in the loop</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://github.com/cloudflare/agents/tree/main/examples/playground"
+              rel="noopener"
+              >Playground</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://blog.cloudflare.com/build-ai-agents-on-cloudflare/"
+              rel="noopener"
+              >Announcement</a
+            >
+          </li>
+        </ul>
+        <p>© Cloudflare, Inc. Released under the MIT License.</p>
+      </div>
+    </footer>
+  </body>
+</html>

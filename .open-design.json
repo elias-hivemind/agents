@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "designSystem": {
+    "slug": "cloudflare-kumo",
+    "path": "design-systems/cloudflare-kumo"
+  },
+  "skill": {
+    "slug": "saas-landing",
+    "path": "design-templates/saas-landing",
+    "kind": "design-template",
+    "mode": "prototype"
+  },
+  "boundAt": "2026-09-20T21:10:00Z"
+}
