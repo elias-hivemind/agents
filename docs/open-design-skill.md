@@ -37,32 +37,18 @@ skill writes a per-project `.open-design.json` binding after the first pick.
 ## Claude Code on the web
 
 Remote containers start from a fresh image, so user-level skills are gone each
-session. To re-install on every web session, add a SessionStart hook:
+session. This repo ships a SessionStart hook that re-installs the skill on
+every web session and is a no-op locally:
 
-`.claude/hooks/session-start.sh`
+- `.claude/hooks/session-start.sh` runs the installer when
+  `CLAUDE_CODE_REMOTE=true`.
+- `.claude/settings.example.json` registers it. Copy it into place once:
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
-if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then exit 0; fi
-"$CLAUDE_PROJECT_DIR/scripts/install-open-design-skill.sh" || exit 0
+cp .claude/settings.example.json .claude/settings.json
 ```
 
-`.claude/settings.json`
-
-```json
-{
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
+Claude Code cannot write `.claude/settings.json` for you (it is treated as
+self-modification), which is why the registration ships as an example file.
+If you already have a `.claude/settings.json`, merge the `hooks.SessionStart`
+entry into it instead of overwriting.
