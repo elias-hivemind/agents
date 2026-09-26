@@ -135,10 +135,10 @@ class FfmpegTest(unittest.TestCase):
         t = Path(cls.tmp.name)
         cls.wide = str(t / "wide.mp4")
         cls.silent = str(t / "silent.mp4")
-        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i",  # nosec B603
                         "testsrc=s=1280x720:r=25:d=3", "-f", "lavfi", "-i",
                         "sine=f=440:d=3", "-shortest", "-pix_fmt", "yuv420p", cls.wide], check=True)
-        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i",  # nosec B603
                         "testsrc=s=720x1280:r=30:d=2", "-pix_fmt", "yuv420p", cls.silent], check=True)
         cls.srt = str(t / "c.srt")
         Path(cls.srt).write_text("1\n00:00:00,000 --> 00:00:02,000\nHello: it's live\n")

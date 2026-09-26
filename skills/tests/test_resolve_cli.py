@@ -82,6 +82,10 @@ class ResolveCliTest(unittest.TestCase):
         code, _, err = run("timeline", "export", "Reel", target, "--format", "fcpxml")
         self.assertEqual(code, 0, err)
         self.assertTrue(os.path.isfile(target))
+        edl = os.path.join(self.tmp.name, "reel.edl")
+        self.assertEqual(run("timeline", "export", "Reel", edl, "--format", "edl")[0], 0)
+        with open(edl) as fh:
+            self.assertEqual(fh.read().strip(), "1:0:Reel")  # EXPORT_EDL with EXPORT_NONE
         self.assertEqual(run("timeline", "export", "Nope", target, "--format", "edl")[0], 2)
 
     def test_06_render(self):

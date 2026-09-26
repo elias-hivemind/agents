@@ -72,13 +72,19 @@ def _candidates() -> List[str]:
     return found
 
 
+# Only GIMP binaries may be launched: gimp, gimp-console, gimp-console-3.0, ...
+GIMP_EXE_RE = re.compile(r"gimp(-console)?(-\d+(\.\d+)?)?(\.exe)?", re.I)
+
+
 def find_gimp(explicit: Optional[str]) -> str:
     choice = explicit or os.environ.get("GIMP_CONSOLE")
     if choice:
         path = shutil.which(choice) or choice
         if not os.path.isfile(path):
             raise CliError(f"GIMP executable not found: {choice}")
-        return path
+        if not GIMP_EXE_RE.fullmatch(os.path.basename(path)):
+            raise CliError(f"Not a GIMP executable (expected gimp-console*): {path}")
+        return os.path.abspath(path)
     for cand in _candidates():
         if cand and os.path.isfile(cand):
             return cand
@@ -90,7 +96,8 @@ def find_gimp(explicit: Optional[str]) -> str:
 
 def gimp_version(exe: str) -> tuple:
     try:
-        out = subprocess.run([exe, "--version"], capture_output=True,
+        # argv list, no shell; exe is validated by find_gimp()
+        out = subprocess.run([exe, "--version"], capture_output=True,  # nosec B603
                              text=True, timeout=60).stdout
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise CliError(f"Failed to run {exe} --version: {exc}") from exc
@@ -245,7 +252,8 @@ def run_batch(exe: str, major: int, commands: List[str], timeout: int,
     if verbose:
         print("+ " + " ".join(argv), file=sys.stderr)
     try:
-        proc = subprocess.run(argv, capture_output=True, text=True,
+        # argv list, no shell; exe validated by find_gimp(), paths are Scheme-quoted
+        proc = subprocess.run(argv, capture_output=True, text=True,  # nosec B603
                               timeout=timeout, errors="replace")
     except subprocess.TimeoutExpired as exc:
         raise CliError(f"GIMP timed out after {timeout}s") from exc

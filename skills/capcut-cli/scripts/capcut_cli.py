@@ -262,25 +262,34 @@ def _swap_prefix(path: str, old: str, new: str) -> Optional[str]:
     return None
 
 
+def _relink_paths(items, key: str, old: str, new: str) -> List[Tuple[str, str]]:
+    """Rewrite m[key] in place for every item under the old prefix."""
+    changes = []
+    for _, m in items:
+        swapped = _swap_prefix(m[key], old, new)
+        if swapped and swapped != m[key]:
+            changes.append((m[key], swapped))
+            m[key] = swapped
+    return changes
+
+
+def _write_json_with_backup(path: Path, data: Dict[str, Any], stamp: str) -> None:
+    shutil.copy2(path, path.with_name(f"{path.name}.{stamp}.bak"))
+    tmp = path.with_name(path.name + ".tmp")
+    with tmp.open("w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False, separators=(",", ":"))
+    os.replace(tmp, path)
+
+
 def cmd_relink(args) -> int:
     d = resolve_draft(args.root, args.draft)
     f, content = require_content(d)
     meta_path = d / META_FILE
     meta = read_json(meta_path)
-    changes: List[Tuple[str, str]] = []
-
-    for _, m in iter_material_paths(content):
-        new = _swap_prefix(m["path"], args.from_prefix, args.to_prefix)
-        if new and new != m["path"]:
-            changes.append((m["path"], new))
-            m["path"] = new
-    meta_changes = 0
-    if meta:
-        for _, m in iter_meta_paths(meta):
-            new = _swap_prefix(m["file_Path"], args.from_prefix, args.to_prefix)
-            if new and new != m["file_Path"]:
-                m["file_Path"] = new
-                meta_changes += 1
+    changes = _relink_paths(iter_material_paths(content), "path",
+                            args.from_prefix, args.to_prefix)
+    meta_changes = _relink_paths(iter_meta_paths(meta), "file_Path",
+                                 args.from_prefix, args.to_prefix) if meta else []
 
     for old, new in changes:
         flag = "" if os.path.exists(new) else "   [target missing]"
@@ -289,19 +298,14 @@ def cmd_relink(args) -> int:
         print("nothing matched --from; no changes")
         return 1
     if args.dry_run:
-        print(f"dry run: {len(changes)} material path(s), {meta_changes} meta path(s)")
+        print(f"dry run: {len(changes)} material path(s), {len(meta_changes)} meta path(s)")
         return 0
 
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    for src, data in ((f, content), (meta_path, meta if meta_changes else None)):
-        if data is None:
-            continue
-        shutil.copy2(src, src.with_name(f"{src.name}.{stamp}.bak"))
-        tmp = src.with_name(src.name + ".tmp")
-        with tmp.open("w", encoding="utf-8") as fh:
-            json.dump(data, fh, ensure_ascii=False, separators=(",", ":"))
-        os.replace(tmp, src)
-    print(f"relinked {len(changes)} material path(s), {meta_changes} meta path(s); "
+    _write_json_with_backup(f, content, stamp)
+    if meta_changes:
+        _write_json_with_backup(meta_path, meta, stamp)
+    print(f"relinked {len(changes)} material path(s), {len(meta_changes)} meta path(s); "
           f"backups *.{stamp}.bak")
     return 0
 
@@ -335,7 +339,8 @@ def probe(path: str) -> Dict[str, Any]:
     need_ffmpeg()
     if not os.path.isfile(path):
         raise CliError(f"Input not found: {path}")
-    r = subprocess.run(["ffprobe", "-v", "error", "-print_format", "json",
+    # argv list, no shell; fixed tool name, path passed as a single argument
+    r = subprocess.run(["ffprobe", "-v", "error", "-print_format", "json",  # nosec B603
                         "-show_format", "-show_streams", path],
                        capture_output=True, text=True)
     if r.returncode != 0:
@@ -387,7 +392,8 @@ def ffmpeg(args, argv: List[str]) -> int:
     if args.dry_run:
         print(" ".join(f'"{c}"' if " " in c else c for c in cmd))
         return 0
-    r = subprocess.run(cmd)
+    # argv list, no shell; cmd[0] is always ffmpeg, filter args are escaped
+    r = subprocess.run(cmd)  # nosec B603
     if r.returncode != 0:
         raise CliError(f"ffmpeg exited with {r.returncode}")
     print(args.output)
@@ -528,18 +534,7 @@ def cmd_audio(args) -> int:
 # argparse
 # --------------------------------------------------------------------------
 
-def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="capcut-cli", description=__doc__,
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
-    common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--json", action="store_true")
-    common.add_argument("--root", help="CapCut draft folder (default: auto / $CAPCUT_DRAFTS)")
-    render = argparse.ArgumentParser(add_help=False)
-    render.add_argument("-o", "--output", required=True)
-    render.add_argument("--force", action="store_true", help="overwrite output")
-    render.add_argument("--dry-run", action="store_true", help="print the ffmpeg command")
-
-    sub = p.add_subparsers(dest="cmd", required=True)
+def _add_draft_parsers(sub, common) -> None:
     s = sub.add_parser("doctor", parents=[common], help="find drafts folder and ffmpeg")
     s.set_defaults(func=cmd_doctor)
     s = sub.add_parser("drafts", parents=[common], help="list drafts")
@@ -563,10 +558,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("draft")
     s.add_argument("--dest", help="directory for the zip (default: cwd)")
     s.set_defaults(func=cmd_backup)
-
     s = sub.add_parser("probe", parents=[common], help="duration/size/codecs via ffprobe")
     s.add_argument("inputs", nargs="+")
     s.set_defaults(func=cmd_probe)
+
+
+def _add_clip_parsers(sub, render) -> None:
     s = sub.add_parser("trim", parents=[render], help="cut a clip")
     s.add_argument("input")
     s.add_argument("--start", type=float, default=0.0)
@@ -590,6 +587,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--size", help="exact WxH, overrides --aspect")
     s.add_argument("--mode", choices=["crop", "pad"], default="crop")
     s.set_defaults(func=cmd_reframe)
+
+
+def _add_overlay_parsers(sub, render) -> None:
     s = sub.add_parser("captions", parents=[render], help="burn in an .srt")
     s.add_argument("input")
     s.add_argument("--srt", required=True)
@@ -605,6 +605,22 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--mute", action="store_true")
     s.add_argument("--extract", action="store_true", help="write audio only (use .m4a)")
     s.set_defaults(func=cmd_audio)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="capcut-cli", description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--json", action="store_true")
+    common.add_argument("--root", help="CapCut draft folder (default: auto / $CAPCUT_DRAFTS)")
+    render = argparse.ArgumentParser(add_help=False)
+    render.add_argument("-o", "--output", required=True)
+    render.add_argument("--force", action="store_true", help="overwrite output")
+    render.add_argument("--dry-run", action="store_true", help="print the ffmpeg command")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    _add_draft_parsers(sub, common)
+    _add_clip_parsers(sub, render)
+    _add_overlay_parsers(sub, render)
     return p
 
 

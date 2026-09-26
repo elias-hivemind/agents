@@ -62,6 +62,10 @@ class ScriptGenTest(unittest.TestCase):
         with self.assertRaises(gimp_cli.CliError):
             gimp_cli.parse_crop("10x20")
 
+    def test_rejects_non_gimp_executable(self):
+        with self.assertRaises(gimp_cli.CliError):
+            gimp_cli.find_gimp(sys.executable)
+
     def test_output_planning(self):
         with tempfile.TemporaryDirectory() as t:
             a = os.path.join(t, "a.png")
@@ -86,7 +90,7 @@ class GimpEndToEndTest(unittest.TestCase):
     def test_edit_and_info(self):
         with tempfile.TemporaryDirectory() as t:
             src = os.path.join(t, "in.jpg")
-            subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+            subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i",  # nosec B603
                             "testsrc=s=640x480", "-frames:v", "1", src], check=True)
             dst = os.path.join(t, "out.png")
             code, out, err = run("edit", src, "-o", dst, "--crop", "400x400+0+0",

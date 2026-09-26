@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""resolve-cli: drive DaVinci Resolve from the command line.
+r"""resolve-cli: drive DaVinci Resolve from the command line.
 
 Uses Blackmagic's official scripting API (DaVinciResolveScript /
 fusionscript). Resolve must be RUNNING, with
@@ -16,7 +16,7 @@ Examples:
   resolve_cli.py project create "Drop 07" --fps 30 --resolution 1080x1920
   resolve_cli.py import clips/*.mp4 --bin Raw
   resolve_cli.py timeline create Reel --clips clips/a.mp4 clips/b.mp4
-  resolve_cli.py render --timeline Reel --preset "YouTube - 1080p" \\
+  resolve_cli.py render --timeline Reel --preset "YouTube - 1080p" \
       --target-dir exports --name reel_v1 --wait
   resolve_cli.py timeline export Reel reel.fcpxml --format fcpxml
 """
@@ -285,90 +285,104 @@ def cmd_media(args, ctx: Ctx) -> int:
     return 0
 
 
-def cmd_timeline(args, ctx: Ctx) -> int:
+def _tl_list(args, ctx: Ctx) -> None:
     proj = ctx.project
-    if args.action == "list":
-        rows = []
-        for i in range(1, (proj.GetTimelineCount() or 0) + 1):
-            tl = proj.GetTimelineByIndex(i)
-            rows.append({"index": i, "name": tl.GetName(),
-                         "start": tl.GetStartFrame(), "end": tl.GetEndFrame()})
-        out(rows, args.json)
-    elif args.action == "create":
-        pool = proj.GetMediaPool()
-        if args.clips:
-            items = import_media(ctx, expand_media(args.clips), args.bin)
-            tl = pool.CreateTimelineFromClips(args.name, items)
-        else:
-            tl = pool.CreateEmptyTimeline(args.name)
-        if not tl:
-            raise CliError(f"Could not create timeline (name taken?): {args.name}")
-        proj.SetCurrentTimeline(tl)
-        print(f"created timeline: {args.name}")
-    elif args.action == "use":
-        if not proj.SetCurrentTimeline(ctx.timeline(args.name)):
-            raise CliError(f"Could not switch to {args.name}")
-        print(f"current timeline: {args.name}")
-    elif args.action == "append":
-        tl = ctx.timeline(args.timeline)
-        proj.SetCurrentTimeline(tl)
+    rows = []
+    for i in range(1, (proj.GetTimelineCount() or 0) + 1):
+        tl = proj.GetTimelineByIndex(i)
+        rows.append({"index": i, "name": tl.GetName(),
+                     "start": tl.GetStartFrame(), "end": tl.GetEndFrame()})
+    out(rows, args.json)
+
+
+def _tl_create(args, ctx: Ctx) -> None:
+    proj = ctx.project
+    pool = proj.GetMediaPool()
+    if args.clips:
         items = import_media(ctx, expand_media(args.clips), args.bin)
-        appended = proj.GetMediaPool().AppendToTimeline(items) or []
-        if not appended:
-            raise CliError("AppendToTimeline returned nothing")
-        print(f"appended {len(appended)} clip(s) to {tl.GetName()}")
-    elif args.action == "export":
-        tl = ctx.timeline(args.name)
-        r = ctx.resolve
-        fmts = {
-            "edl": (getattr(r, "EXPORT_EDL", None), getattr(r, "EXPORT_NONE", None)),
-            "fcpxml": (getattr(r, "EXPORT_FCPXML_1_10", None) or getattr(r, "EXPORT_FCPXML_1_9", None), None),
-            "xml": (getattr(r, "EXPORT_FCP_7_XML", None), None),
-            "aaf": (getattr(r, "EXPORT_AAF", None), getattr(r, "EXPORT_AAF_NEW", None)),
-            "otio": (getattr(r, "EXPORT_OTIO", None), None),
-            "csv": (getattr(r, "EXPORT_TEXT_CSV", None), None),
-            "drt": (getattr(r, "EXPORT_DRT", None), None),
-        }
-        kind, subtype = fmts[args.format]
-        if kind is None:
-            raise CliError(f"This Resolve version does not support {args.format} export")
-        target = os.path.abspath(args.path)
-        ok = tl.Export(target, kind, subtype) if subtype is not None else tl.Export(target, kind)
-        if not ok:
-            raise CliError(f"Export failed: {target}")
-        print(f"exported {tl.GetName()} -> {target}")
-    elif args.action == "marker":
-        tl = ctx.timeline(args.timeline)
-        if not tl.AddMarker(args.frame, args.color, args.name, args.note or "", args.duration):
-            raise CliError("AddMarker failed (frame outside timeline or already marked?)")
-        print(f"marker @{args.frame} on {tl.GetName()}")
+        tl = pool.CreateTimelineFromClips(args.name, items)
+    else:
+        tl = pool.CreateEmptyTimeline(args.name)
+    if not tl:
+        raise CliError(f"Could not create timeline (name taken?): {args.name}")
+    proj.SetCurrentTimeline(tl)
+    print(f"created timeline: {args.name}")
+
+
+def _tl_use(args, ctx: Ctx) -> None:
+    if not ctx.project.SetCurrentTimeline(ctx.timeline(args.name)):
+        raise CliError(f"Could not switch to {args.name}")
+    print(f"current timeline: {args.name}")
+
+
+def _tl_append(args, ctx: Ctx) -> None:
+    proj = ctx.project
+    tl = ctx.timeline(args.timeline)
+    proj.SetCurrentTimeline(tl)
+    items = import_media(ctx, expand_media(args.clips), args.bin)
+    appended = proj.GetMediaPool().AppendToTimeline(items) or []
+    if not appended:
+        raise CliError("AppendToTimeline returned nothing")
+    print(f"appended {len(appended)} clip(s) to {tl.GetName()}")
+
+
+# format -> (export type constants to try, in order; export subtype constant)
+EXPORT_TYPES = {
+    "edl": (("EXPORT_EDL",), "EXPORT_NONE"),
+    "fcpxml": (("EXPORT_FCPXML_1_10", "EXPORT_FCPXML_1_9"), None),
+    "xml": (("EXPORT_FCP_7_XML",), None),
+    "aaf": (("EXPORT_AAF",), "EXPORT_AAF_NEW"),
+    "otio": (("EXPORT_OTIO",), None),
+    "csv": (("EXPORT_TEXT_CSV",), None),
+    "drt": (("EXPORT_DRT",), None),
+}
+
+
+def _tl_export(args, ctx: Ctx) -> None:
+    tl = ctx.timeline(args.name)
+    names, subtype_name = EXPORT_TYPES[args.format]
+    kind = next((getattr(ctx.resolve, n) for n in names if hasattr(ctx.resolve, n)), None)
+    if kind is None:
+        raise CliError(f"This Resolve version does not support {args.format} export")
+    target = os.path.abspath(args.path)
+    extra = (getattr(ctx.resolve, subtype_name),) if subtype_name and hasattr(ctx.resolve, subtype_name) else ()
+    if not tl.Export(target, kind, *extra):
+        raise CliError(f"Export failed: {target}")
+    print(f"exported {tl.GetName()} -> {target}")
+
+
+def _tl_marker(args, ctx: Ctx) -> None:
+    tl = ctx.timeline(args.timeline)
+    if not tl.AddMarker(args.frame, args.color, args.name, args.note or "", args.duration):
+        raise CliError("AddMarker failed (frame outside timeline or already marked?)")
+    print(f"marker @{args.frame} on {tl.GetName()}")
+
+
+TIMELINE_ACTIONS = {"list": _tl_list, "create": _tl_create, "use": _tl_use,
+                    "append": _tl_append, "export": _tl_export, "marker": _tl_marker}
+
+
+def cmd_timeline(args, ctx: Ctx) -> int:
+    TIMELINE_ACTIONS[args.action](args, ctx)
     return 0
 
 
-def cmd_render(args, ctx: Ctx) -> int:
-    proj = ctx.project
+def _render_listing(args, proj) -> bool:
+    """Handle --list-presets / --list-formats / --status. True if handled."""
     if args.list_presets:
         out(list(proj.GetRenderPresetList() or []), args.json)
-        return 0
-    if args.list_formats:
+    elif args.list_formats:
         formats = proj.GetRenderFormats() or {}
-        rows = {name: list((proj.GetRenderCodecs(ext) or {}).keys())
-                for name, ext in formats.items()}
-        out(rows, args.json)
-        return 0
-    if args.status:
+        out({name: list((proj.GetRenderCodecs(ext) or {}).keys())
+             for name, ext in formats.items()}, args.json)
+    elif args.status:
         out(list(proj.GetRenderJobList() or []), args.json)
-        return 0
+    else:
+        return False
+    return True
 
-    tl = ctx.timeline(args.timeline)
-    proj.SetCurrentTimeline(tl)
-    if args.preset and not proj.LoadRenderPreset(args.preset):
-        raise CliError(f"Unknown render preset: {args.preset} (see render --list-presets)")
-    if args.format or args.codec:
-        if not (args.format and args.codec):
-            raise CliError("--format and --codec go together (see render --list-formats)")
-        if not proj.SetCurrentRenderFormatAndCodec(args.format, args.codec):
-            raise CliError(f"Resolve rejected format/codec {args.format}/{args.codec}")
+
+def _render_settings(args, tl) -> Dict[str, Any]:
     settings: Dict[str, Any] = {"SelectAllFrames": True}
     if args.target_dir:
         os.makedirs(args.target_dir, exist_ok=True)
@@ -377,26 +391,32 @@ def cmd_render(args, ctx: Ctx) -> int:
         settings["CustomName"] = args.name
     if args.in_frame is not None or args.out_frame is not None:
         settings["SelectAllFrames"] = False
-        settings["MarkIn"] = args.in_frame if args.in_frame is not None else tl.GetStartFrame()
-        settings["MarkOut"] = args.out_frame if args.out_frame is not None else tl.GetEndFrame()
+        settings["MarkIn"] = tl.GetStartFrame() if args.in_frame is None else args.in_frame
+        settings["MarkOut"] = tl.GetEndFrame() if args.out_frame is None else args.out_frame
+    return settings
+
+
+def _configure_render(args, proj, tl) -> None:
+    proj.SetCurrentTimeline(tl)
+    if args.preset and not proj.LoadRenderPreset(args.preset):
+        raise CliError(f"Unknown render preset: {args.preset} (see render --list-presets)")
+    if bool(args.format) != bool(args.codec):
+        raise CliError("--format and --codec go together (see render --list-formats)")
+    if args.format and not proj.SetCurrentRenderFormatAndCodec(args.format, args.codec):
+        raise CliError(f"Resolve rejected format/codec {args.format}/{args.codec}")
+    settings = _render_settings(args, tl)
     if not proj.SetRenderSettings(settings):
         raise CliError(f"Resolve rejected render settings: {settings}")
-    job = proj.AddRenderJob()
-    if not job:
-        raise CliError("AddRenderJob failed (no target dir set in preset?)")
-    if not proj.StartRendering([job], False):
-        raise CliError("StartRendering failed")
-    print(f"render job {job} started for {tl.GetName()}")
-    if not args.wait:
-        return 0
-    deadline = time.time() + args.timeout
+
+
+def _wait_for_render(proj, job: str, timeout: int) -> None:
+    deadline = time.time() + timeout
     last = None
     while proj.IsRenderingInProgress():
         if time.time() > deadline:
             proj.StopRendering()
-            raise CliError(f"Render exceeded --timeout {args.timeout}s; stopped.")
-        st = proj.GetRenderJobStatus(job) or {}
-        pct = st.get("CompletionPercentage")
+            raise CliError(f"Render exceeded --timeout {timeout}s; stopped.")
+        pct = (proj.GetRenderJobStatus(job) or {}).get("CompletionPercentage")
         if pct != last:
             print(f"  {pct}%", flush=True)
             last = pct
@@ -406,14 +426,22 @@ def cmd_render(args, ctx: Ctx) -> int:
     print(f"status: {status}")
     if status != "Complete":
         raise CliError(f"Render did not complete: {st}")
-    return 0
 
 
-def cmd_eval(args, ctx: Ctx) -> int:
-    code = sys.stdin.read() if args.code == "-" else args.code
-    scope = {"resolve": ctx.resolve, "pm": ctx.pm,
-             "project": ctx.pm.GetCurrentProject()}
-    exec(compile(code, "<resolve-eval>", "exec"), scope)  # user-supplied, local only
+def cmd_render(args, ctx: Ctx) -> int:
+    proj = ctx.project
+    if _render_listing(args, proj):
+        return 0
+    tl = ctx.timeline(args.timeline)
+    _configure_render(args, proj, tl)
+    job = proj.AddRenderJob()
+    if not job:
+        raise CliError("AddRenderJob failed (no target dir set in preset?)")
+    if not proj.StartRendering([job], False):
+        raise CliError("StartRendering failed")
+    print(f"render job {job} started for {tl.GetName()}")
+    if args.wait:
+        _wait_for_render(proj, job, args.timeout)
     return 0
 
 
@@ -421,27 +449,16 @@ def cmd_eval(args, ctx: Ctx) -> int:
 # argparse
 # --------------------------------------------------------------------------
 
-def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="resolve-cli", description=__doc__,
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
-    common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--json", action="store_true", help="JSON output")
-    sub = p.add_subparsers(dest="cmd", required=True)
+MARKER_COLORS = ["Blue", "Cyan", "Green", "Yellow", "Red", "Pink", "Purple", "Fuchsia",
+                 "Rose", "Lavender", "Sky", "Mint", "Lemon", "Sand", "Cocoa", "Cream"]
 
-    s = sub.add_parser("doctor", parents=[common], help="check the scripting connection")
-    s.set_defaults(func=cmd_doctor, needs_ctx=False)
 
-    s = sub.add_parser("page", parents=[common], help="switch Resolve page")
-    s.add_argument("page", choices=["media", "cut", "edit", "fusion", "color", "fairlight", "deliver"])
-    s.set_defaults(func=cmd_page)
-
+def _add_project_parser(sub, common) -> None:
     s = sub.add_parser("project", help="list/open/create/save/set")
     ps = s.add_subparsers(dest="action", required=True)
-    ps.add_parser("list", parents=[common])
-    ps.add_parser("current", parents=[common])
-    ps.add_parser("save", parents=[common])
-    x = ps.add_parser("open", parents=[common])
-    x.add_argument("name")
+    for name in ("list", "current", "save"):
+        ps.add_parser(name, parents=[common])
+    ps.add_parser("open", parents=[common]).add_argument("name")
     for name in ("create", "set"):
         x = ps.add_parser(name, parents=[common])
         if name == "create":
@@ -452,14 +469,8 @@ def build_parser() -> argparse.ArgumentParser:
                        help="any SetSetting key; repeatable")
     s.set_defaults(func=cmd_project)
 
-    s = sub.add_parser("import", parents=[common], help="import media into the pool")
-    s.add_argument("files", nargs="+")
-    s.add_argument("--bin", help="bin under Master (created if missing)")
-    s.set_defaults(func=cmd_import)
 
-    s = sub.add_parser("media", parents=[common], help="list media pool clips")
-    s.set_defaults(func=cmd_media)
-
+def _add_timeline_parser(sub, common) -> None:
     s = sub.add_parser("timeline", help="list/create/use/append/export/marker")
     ts = s.add_subparsers(dest="action", required=True)
     ts.add_parser("list", parents=[common])
@@ -467,8 +478,7 @@ def build_parser() -> argparse.ArgumentParser:
     x.add_argument("name")
     x.add_argument("--clips", nargs="+", help="media to import and lay down in order")
     x.add_argument("--bin")
-    x = ts.add_parser("use", parents=[common])
-    x.add_argument("name")
+    ts.add_parser("use", parents=[common]).add_argument("name")
     x = ts.add_parser("append", parents=[common])
     x.add_argument("clips", nargs="+")
     x.add_argument("--timeline")
@@ -476,20 +486,18 @@ def build_parser() -> argparse.ArgumentParser:
     x = ts.add_parser("export", parents=[common])
     x.add_argument("name")
     x.add_argument("path")
-    x.add_argument("--format", required=True,
-                   choices=["edl", "fcpxml", "xml", "aaf", "otio", "csv", "drt"])
+    x.add_argument("--format", required=True, choices=list(EXPORT_TYPES))
     x = ts.add_parser("marker", parents=[common])
     x.add_argument("frame", type=int)
     x.add_argument("--timeline")
     x.add_argument("--name", default="marker")
     x.add_argument("--note")
     x.add_argument("--duration", type=int, default=1)
-    x.add_argument("--color", default="Blue",
-                   choices=["Blue", "Cyan", "Green", "Yellow", "Red", "Pink", "Purple",
-                            "Fuchsia", "Rose", "Lavender", "Sky", "Mint", "Lemon",
-                            "Sand", "Cocoa", "Cream"])
+    x.add_argument("--color", default="Blue", choices=MARKER_COLORS)
     s.set_defaults(func=cmd_timeline)
 
+
+def _add_render_parser(sub, common) -> None:
     s = sub.add_parser("render", parents=[common], help="queue and run a render job")
     s.add_argument("--timeline", help="default: current timeline")
     s.add_argument("--preset", help="render preset name (see --list-presets)")
@@ -506,10 +514,28 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--status", action="store_true", help="show the render queue")
     s.set_defaults(func=cmd_render)
 
-    s = sub.add_parser("eval", parents=[common],
-                       help="run Python with resolve/pm/project bound ('-' = stdin)")
-    s.add_argument("code")
-    s.set_defaults(func=cmd_eval)
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="resolve-cli", description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--json", action="store_true", help="JSON output")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    s = sub.add_parser("doctor", parents=[common], help="check the scripting connection")
+    s.set_defaults(func=cmd_doctor, needs_ctx=False)
+    s = sub.add_parser("page", parents=[common], help="switch Resolve page")
+    s.add_argument("page", choices=["media", "cut", "edit", "fusion", "color", "fairlight", "deliver"])
+    s.set_defaults(func=cmd_page)
+    _add_project_parser(sub, common)
+    s = sub.add_parser("import", parents=[common], help="import media into the pool")
+    s.add_argument("files", nargs="+")
+    s.add_argument("--bin", help="bin under Master (created if missing)")
+    s.set_defaults(func=cmd_import)
+    s = sub.add_parser("media", parents=[common], help="list media pool clips")
+    s.set_defaults(func=cmd_media)
+    _add_timeline_parser(sub, common)
+    _add_render_parser(sub, common)
     return p
 
 

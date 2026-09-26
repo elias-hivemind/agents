@@ -43,7 +43,6 @@ python3 $S render --timeline Reel --preset "YouTube - 1080p" --target-dir export
 python3 $S render --timeline Reel --format mp4 --codec H264 --target-dir exports --wait
 python3 $S render --status --json
 
-python3 $S eval 'print(project.GetName())'   # escape hatch: resolve, pm, project bound
 ```
 
 ## Rules
@@ -53,7 +52,7 @@ python3 $S eval 'print(project.GetName())'   # escape hatch: resolve, pm, projec
 3. `render` without `--wait` only queues and starts the job. With `--wait` it polls until `Complete` and exits 2 on failure or cancel. The default timeout is 6 h.
 4. Pass `--format` and `--codec` together. Take the values from `--list-formats`.
 5. Run `project save` after edits. Resolve does not autosave scripted changes on its own schedule.
-6. `eval` runs arbitrary Python inside this process. Only run code the user wrote or approved.
+6. For API calls not wrapped here, use Resolve's own Workspace → Console. This CLI deliberately does not execute arbitrary Python.
 
 ## Exit codes
 
