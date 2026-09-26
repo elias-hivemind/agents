@@ -198,7 +198,7 @@ def _librosa_beats(path: str, start: float, duration: float, bpm: Optional[float
     y = np.frombuffer(r.stdout, dtype=np.float32)
     if len(y) < sr:
         raise CliError(f"Less than 1 s of audio in {path} from {start}s")
-    tempo, times = librosa.beat.beat_track(y=y, sr=sr, units="time", start_bpm=bpm or 120.0,
+    _, times = librosa.beat.beat_track(y=y, sr=sr, units="time", start_bpm=bpm or 120.0,
                                            tightness=400 if bpm else 100)
     if len(times) < 2:
         return None
