@@ -36,6 +36,7 @@ per-song flags.
 ## Workflow
 
 ### 1. Get the inputs
+
 - **Audio:** the uploaded WAV/MP3/M4A/FLAC. If several songs were uploaded, render each one in turn.
 - **Title:** use the title the user gave. Otherwise the script cleans the file name
   (`Vendetta_Soul_(FINAL MASTER).wav` → `VENDETTA SOUL`). Confirm with the user only when the file
@@ -46,16 +47,19 @@ per-song flags.
 Do not ask anything else. The user's standing instruction is "no need to explain again".
 
 ### 2. Make sure the dependencies are there (first run on a machine only)
+
 ```bash
 python3 -c "import numpy, PIL" 2>/dev/null || pip install numpy pillow
 command -v ffmpeg >/dev/null || python3 -c "import imageio_ffmpeg" 2>/dev/null || pip install imageio-ffmpeg
 ```
 
 ### 3. Render
+
 ```bash
 python3 "<skill-dir>/scripts/render.py" "<song file>" \
   --title "VENDETTA SOUL" --tagline "Me hard call Vendetta" --out "<output dir>"
 ```
+
 `<skill-dir>` is the folder holding this SKILL.md. Write outputs to the user's working or outputs
 folder, never inside the skill folder.
 
@@ -74,6 +78,7 @@ took 3.4 minutes), so a 3:26 song takes about 7 minutes. Run it in the backgroun
 it's rendering. For a quick look first, use `--preview 8`.
 
 ### 4. Verify before delivering
+
 - Confirm both MP4s exist and their durations are right: YouTube = song length, TikTok = 63s
   (or the whole song if it is shorter than 63s).
 - Pull one frame from each (`ffmpeg -ss 5 -i file.mp4 -frames:v 1 check.png`) and look at it:
@@ -82,13 +87,16 @@ it's rendering. For a quick look first, use `--preview 8`.
 - If the title is clipped or wraps badly, re-render with a shorter `--title` and tell the user why.
 
 ### 5. Deliver
+
 Hand over the three files and report:
+
 - the TikTok window used (the script prints `TikTok window 71.3s → 134.3s`), so the user knows which part was picked
 - the durations of both videos
 
 Offer exactly one follow-up: a different TikTok section, or a 1080p render.
 
 ## Guardrails
+
 - Never claim a render finished without the files existing on disk.
 - Don't post anywhere. Uploading to YouTube or TikTok is the user's call. If they ask, use the
   `stitch-reel` skill's publishing rules: explicit go-ahead first, and a public URL is required.
@@ -96,6 +104,7 @@ Offer exactly one follow-up: a different TikTok section, or a 1080p render.
 - The song audio is untouched apart from the TikTok fades. No re-mastering, no loudness changes.
 
 ## Files
+
 - `scripts/render.py` is the renderer (the single source of truth for the look)
 - `assets/fonts/Anton-Regular.ttf` is the title font (SIL OFL 1.1, license in `OFL.txt`)
 - `assets/reference/` holds the original spec and the Vendetta Soul reference frame

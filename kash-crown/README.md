@@ -26,12 +26,14 @@ The signature visualizer for every Kash Crown release. Upload a song, say
 select `kash-crown/release/kc-vendetta-bounce.zip`.
 
 **Claude Code on macOS / Linux:**
+
 ```bash
 git clone https://github.com/elias-hivemind/agents.git && cd agents
 ./kash-crown/install.sh "$HOME/Documents/Obsidian Vault"   # vault path optional
 ```
 
 **Claude Code on Windows (PowerShell):**
+
 ```powershell
 git clone https://github.com/elias-hivemind/agents.git; cd agents
 powershell -ExecutionPolicy Bypass -File kash-crown\install.ps1 -Vault "$HOME\Documents\Obsidian Vault"
@@ -42,17 +44,22 @@ Both installers copy the skill to `~/.claude/skills/`, move any older install to
 (if you pass a vault) drop the note into `<Vault>/Kash Crown/Skills/`.
 
 ## Render by hand
+
 ```bash
 python3 .claude/skills/kc-vendetta-bounce/scripts/render.py "Vendetta Soul.wav" \
   --title "VENDETTA SOUL" --tagline "Me hard call Vendetta" --out ./renders
 ```
+
 Flags: `--only youtube|tiktok`, `--tiktok-start 1:12`, `--preview 8`, `--scale 1.5` (1080p).
 Requirements: Python 3.9+, `numpy`, `pillow`, and ffmpeg (system install or `imageio-ffmpeg`).
 
 ## Changing the look
+
 The look is locked in the constants at the top of `scripts/render.py`. After editing, rebuild
 the zip and the Obsidian note, then re-run the installer:
+
 ```bash
 python3 kash-crown/build.py && ./kash-crown/install.sh
 ```
+
 Title font: Anton (SIL Open Font License 1.1), bundled in `assets/fonts/`.

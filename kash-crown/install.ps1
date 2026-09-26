@@ -20,12 +20,12 @@ if (Test-Path $Dest) {
     New-Item -ItemType Directory -Force -Path $Backups | Out-Null
     $bak = Join-Path $Backups ("kc-vendetta-bounce-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
     Move-Item $Dest $bak
-    Write-Host "Previous install backed up -> $bak"
+    Write-Output "Previous install backed up -> $bak"
 }
 New-Item -ItemType Directory -Force -Path $SkillsDir | Out-Null
 Copy-Item -Recurse $Src $Dest
 Get-ChildItem $Dest -Recurse -Directory -Filter '__pycache__' | Remove-Item -Recurse -Force
-Write-Host "Skill installed -> $Dest"
+Write-Output "Skill installed -> $Dest"
 
 $py = Get-Command py -ErrorAction SilentlyContinue
 if (-not $py) { $py = Get-Command python -ErrorAction SilentlyContinue }
@@ -38,7 +38,7 @@ if (-not $py) {
         if ($LASTEXITCODE -ne 0) { Write-Warning "pip install failed. Run: $($py.Source) -m pip install numpy pillow imageio-ffmpeg" }
     }
     & $py.Source (Join-Path $Dest 'scripts\render.py') --help *> $null
-    if ($LASTEXITCODE -eq 0) { Write-Host 'Renderer check OK' } else { Write-Warning 'Renderer self-check failed; see warning above' }
+    if ($LASTEXITCODE -eq 0) { Write-Output 'Renderer check OK' } else { Write-Warning 'Renderer self-check failed; see warning above' }
 }
 
 if ($Vault) {
@@ -46,8 +46,8 @@ if ($Vault) {
     $NoteDir = Join-Path $Vault 'Kash Crown\Skills'
     New-Item -ItemType Directory -Force -Path $NoteDir | Out-Null
     Copy-Item (Join-Path $Here 'obsidian\KC Vendetta Bounce.md'), (Join-Path $Here 'obsidian\vendetta-soul-reference.png') $NoteDir -Force
-    Write-Host "Obsidian note -> $NoteDir\KC Vendetta Bounce.md"
+    Write-Output "Obsidian note -> $NoteDir\KC Vendetta Bounce.md"
 }
 
-Write-Host ''
-Write-Host 'Done. In any Claude Code session: upload a song and say "Use KC VENDETTA BOUNCE for this".'
+Write-Output ''
+Write-Output 'Done. In any Claude Code session: upload a song and say "Use KC VENDETTA BOUNCE for this".'

@@ -19,15 +19,18 @@ FIXED_TS = (2026, 1, 1, 0, 0, 0)  # reproducible zip bytes
 
 
 def files():
+    """Every file in the skill folder except bytecode."""
     return sorted(p for p in SKILL.rglob("*")
                   if p.is_file() and "__pycache__" not in p.parts and p.suffix != ".pyc")
 
 
 def build_zip():
+    """Write a reproducible zip with the skill folder at its root; return its sha256."""
     ZIP.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(ZIP, "w", zipfile.ZIP_DEFLATED) as z:
         for p in files():
-            info = zipfile.ZipInfo(f"kc-vendetta-bounce/{p.relative_to(SKILL).as_posix()}", FIXED_TS)
+            arcname = f"kc-vendetta-bounce/{p.relative_to(SKILL).as_posix()}"
+            info = zipfile.ZipInfo(arcname, FIXED_TS)
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = (0o755 if p.suffix in (".py", ".sh") else 0o644) << 16
             z.writestr(info, p.read_bytes())
@@ -35,6 +38,7 @@ def build_zip():
 
 
 def build_note(sha):
+    """Write the Obsidian note: frontmatter, SKILL.md body, renderer source."""
     text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
     body = text.split("---", 2)[2].strip() if text.startswith("---") else text
     script = (SKILL / "scripts" / "render.py").read_text(encoding="utf-8")
@@ -76,10 +80,15 @@ zip_sha256: {sha}
 """, encoding="utf-8")
 
 
-if __name__ == "__main__":
-    sha = build_zip()
-    build_note(sha)
+def main():
+    """Build the zip, then the note that records its checksum."""
+    digest = build_zip()
+    build_note(digest)
     ref = SKILL / "assets" / "reference" / "vendetta-soul-reference.png"
     (NOTE.parent / ref.name).write_bytes(ref.read_bytes())
-    print(f"zip  : {ZIP} (sha256 {sha[:12]}…)")
+    print(f"zip  : {ZIP} (sha256 {digest[:12]}…)")
     print(f"note : {NOTE}")
+
+
+if __name__ == "__main__":
+    main()
