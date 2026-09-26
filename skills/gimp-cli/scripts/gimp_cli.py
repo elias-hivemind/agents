@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""gimp-cli: headless GIMP image editing from the command line.
+"""
+gimp-cli: headless GIMP image editing from the command line.
 
 Drives gimp-console in batch mode with generated Script-Fu. Works with
 GIMP 2.10 and GIMP 3.x (the Script-Fu PDB differs between them; this
@@ -7,7 +8,7 @@ script emits the right dialect for the detected version).
 
 Requires: Python 3.8+, GIMP 2.10 or 3.x installed. Nothing else.
 
-Examples:
+Usage examples --
   gimp_cli.py doctor
   gimp_cli.py info photo.jpg --json
   gimp_cli.py convert logo.xcf -o logo.png
@@ -25,7 +26,7 @@ import os
 import platform
 import re
 import shutil
-import subprocess
+import subprocess  # nosec B404 - argv lists only, never shell=True
 import sys
 import time
 from dataclasses import dataclass
@@ -97,7 +98,8 @@ def find_gimp(explicit: Optional[str]) -> str:
 def gimp_version(exe: str) -> tuple:
     try:
         # argv list, no shell; exe is validated by find_gimp()
-        out = subprocess.run([exe, "--version"], capture_output=True,  # nosec B603 # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+        out = subprocess.run([exe, "--version"], capture_output=True,  # nosec B603
                              text=True, timeout=60).stdout
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise CliError(f"Failed to run {exe} --version: {exc}") from exc
@@ -253,7 +255,8 @@ def run_batch(exe: str, major: int, commands: List[str], timeout: int,
         print("+ " + " ".join(argv), file=sys.stderr)
     try:
         # argv list, no shell; exe validated by find_gimp(), paths are Scheme-quoted
-        proc = subprocess.run(argv, capture_output=True, text=True,  # nosec B603 # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+        proc = subprocess.run(argv, capture_output=True, text=True,  # nosec B603
                               timeout=timeout, errors="replace")
     except subprocess.TimeoutExpired as exc:
         raise CliError(f"GIMP timed out after {timeout}s") from exc

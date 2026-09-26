@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-r"""resolve-cli: drive DaVinci Resolve from the command line.
+r"""
+resolve-cli: drive DaVinci Resolve from the command line.
 
 Uses Blackmagic's official scripting API (DaVinciResolveScript /
 fusionscript). Resolve must be RUNNING, with
@@ -10,7 +11,7 @@ that it cannot connect.
 
 Requires: Python 3.6+ (64-bit, matching Resolve), DaVinci Resolve 18+.
 
-Examples:
+Usage examples --
   resolve_cli.py doctor
   resolve_cli.py project list
   resolve_cli.py project create "Drop 07" --fps 30 --resolution 1080x1920
@@ -99,6 +100,7 @@ def connect():
 
 class Ctx:
     def __init__(self, resolve):
+        """Wrap a connected Resolve scripting object."""
         self.resolve = resolve
         self.pm = resolve.GetProjectManager()
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""capcut-cli: CapCut draft management + CapCut-style quick edits.
+"""
+capcut-cli: CapCut draft management + CapCut-style quick edits.
 
 CapCut has no official CLI, scripting API or headless export. This tool
 covers what can be automated safely:
@@ -16,7 +17,7 @@ and leave it untouched.
 
 Requires: Python 3.8+; ffmpeg + ffprobe on PATH for the edit commands.
 
-Examples:
+Usage examples --
   capcut_cli.py drafts
   capcut_cli.py inspect "0925 Drop"
   capcut_cli.py media "0925 Drop" --missing
@@ -35,7 +36,7 @@ import os
 import platform
 import re
 import shutil
-import subprocess
+import subprocess  # nosec B404 - argv lists only, never shell=True
 import sys
 import zipfile
 from pathlib import Path

@@ -1,4 +1,5 @@
-"""In-memory stand-in for Blackmagic's DaVinciResolveScript, for tests only.
+"""
+In-memory stand-in for Blackmagic's DaVinciResolveScript, for tests only.
 
 Mirrors the subset of the Resolve scripting API that resolve_cli.py calls.
 Set FAKE_RESOLVE_OFFLINE=1 to simulate scriptapp() returning None.

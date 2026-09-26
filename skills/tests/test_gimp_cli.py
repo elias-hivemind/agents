@@ -1,5 +1,8 @@
-"""Tests for gimp_cli.py. Script generation always runs; the end-to-end
-test runs when a gimp-console is found (set GIMP_CONSOLE to pick one).
+"""
+Tests for gimp_cli.py.
+
+Script generation always runs; the end-to-end test runs when a gimp-console
+is found (set GIMP_CONSOLE to pick one).
 
 Run: python3 -m unittest discover -s skills/tests
 """
@@ -9,7 +12,7 @@ import contextlib
 import io
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import sys
 import tempfile
 import unittest
