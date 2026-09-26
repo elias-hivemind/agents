@@ -1,8 +1,6 @@
-"""
-Tests for resolve_cli.py against the in-memory fake scripting API.
+"""Tests for resolve_cli.py against the in-memory fake scripting API."""
 
-Run: python3 -m unittest discover -s skills/tests
-"""
+# Run: python3 -m unittest discover -s skills/tests
 
 import contextlib
 import io

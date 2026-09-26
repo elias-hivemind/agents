@@ -1,7 +1,20 @@
 #!/usr/bin/env python3
-r"""
-resolve-cli: drive DaVinci Resolve from the command line.
+"""resolve-cli: drive DaVinci Resolve from the command line."""
 
+from __future__ import annotations
+
+import argparse
+import glob
+import importlib
+import json
+import os
+import platform
+import sys
+import time
+from typing import Any, Dict, List, Optional
+
+
+EPILOG = r"""
 Uses Blackmagic's official scripting API (DaVinciResolveScript /
 fusionscript). Resolve must be RUNNING, with
   Preferences > System > General > External scripting using = Local
@@ -21,18 +34,6 @@ Usage examples --
       --target-dir exports --name reel_v1 --wait
   resolve_cli.py timeline export Reel reel.fcpxml --format fcpxml
 """
-
-from __future__ import annotations
-
-import argparse
-import glob
-import importlib
-import json
-import os
-import platform
-import sys
-import time
-from typing import Any, Dict, List, Optional
 
 
 class CliError(Exception):
@@ -518,7 +519,7 @@ def _add_render_parser(sub, common) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="resolve-cli", description=__doc__,
+    p = argparse.ArgumentParser(prog="resolve-cli", description=__doc__, epilog=EPILOG,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--json", action="store_true", help="JSON output")

@@ -1,21 +1,5 @@
 #!/usr/bin/env python3
-"""
-gimp-cli: headless GIMP image editing from the command line.
-
-Drives gimp-console in batch mode with generated Script-Fu. Works with
-GIMP 2.10 and GIMP 3.x (the Script-Fu PDB differs between them; this
-script emits the right dialect for the detected version).
-
-Requires: Python 3.8+, GIMP 2.10 or 3.x installed. Nothing else.
-
-Usage examples --
-  gimp_cli.py doctor
-  gimp_cli.py info photo.jpg --json
-  gimp_cli.py convert logo.xcf -o logo.png
-  gimp_cli.py edit in.jpg -o out.jpg --crop 1000x1000+200+0 --resize 1080x
-  gimp_cli.py edit *.png --out-dir web/ --format jpg --resize 50% --grayscale
-  gimp_cli.py script '(gimp-message "hi")'
-"""
+"""gimp-cli: headless GIMP image editing from the command line."""
 
 from __future__ import annotations
 
@@ -36,6 +20,23 @@ from typing import List, Optional
 MARKER = "GIMPCLI:"
 FLATTEN_EXTS = {".jpg", ".jpeg", ".bmp", ".ppm", ".pnm"}
 ERROR_RE = re.compile(r"batch command experienced an execution error:?\s*(.*)", re.I)
+
+
+EPILOG = """
+Drives gimp-console in batch mode with generated Script-Fu. Works with
+GIMP 2.10 and GIMP 3.x (the Script-Fu PDB differs between them; this
+script emits the right dialect for the detected version).
+
+Requires: Python 3.8+, GIMP 2.10 or 3.x installed. Nothing else.
+
+Usage examples --
+  gimp_cli.py doctor
+  gimp_cli.py info photo.jpg --json
+  gimp_cli.py convert logo.xcf -o logo.png
+  gimp_cli.py edit in.jpg -o out.jpg --crop 1000x1000+200+0 --resize 1080x
+  gimp_cli.py edit *.png --out-dir web/ --format jpg --resize 50% --grayscale
+  gimp_cli.py script '(gimp-message "hi")'
+"""
 
 
 class CliError(Exception):
@@ -439,7 +440,7 @@ def cmd_script(args) -> int:
 # --------------------------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="gimp-cli", description=__doc__,
+    p = argparse.ArgumentParser(prog="gimp-cli", description=__doc__, epilog=EPILOG,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--gimp", help="path to gimp-console (default: auto-detect / $GIMP_CONSOLE)")

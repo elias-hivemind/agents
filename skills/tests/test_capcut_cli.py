@@ -1,10 +1,8 @@
-"""
-Tests for capcut_cli.py.
+"""Tests for capcut_cli.py."""
 
-Draft handling runs on synthetic drafts; ffmpeg edits run when ffmpeg is installed.
-
-Run: python3 -m unittest discover -s skills/tests
-"""
+# Draft handling runs on synthetic drafts; ffmpeg edits run when ffmpeg is installed.
+#
+# Run: python3 -m unittest discover -s skills/tests
 
 import contextlib
 import io

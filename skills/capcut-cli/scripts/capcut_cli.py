@@ -1,7 +1,26 @@
 #!/usr/bin/env python3
-"""
-capcut-cli: CapCut draft management + CapCut-style quick edits.
+"""capcut-cli: CapCut draft management + CapCut-style quick edits."""
 
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import platform
+import re
+import shutil
+import subprocess  # nosec B404 - argv lists only, never shell=True
+import sys
+import zipfile
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+CONTENT_FILES = ("draft_content.json", "draft_info.json")
+META_FILE = "draft_meta_info.json"
+
+
+EPILOG = """
 CapCut has no official CLI, scripting API or headless export. This tool
 covers what can be automated safely:
 
@@ -26,24 +45,6 @@ Usage examples --
   capcut_cli.py reframe wide.mp4 -o vertical.mp4 --aspect 9:16 --mode crop
   capcut_cli.py captions reel.mp4 --srt reel.srt -o reel_captioned.mp4
 """
-
-from __future__ import annotations
-
-import argparse
-import datetime as dt
-import json
-import os
-import platform
-import re
-import shutil
-import subprocess  # nosec B404 - argv lists only, never shell=True
-import sys
-import zipfile
-from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
-
-CONTENT_FILES = ("draft_content.json", "draft_info.json")
-META_FILE = "draft_meta_info.json"
 
 
 class CliError(Exception):
@@ -609,7 +610,7 @@ def _add_overlay_parsers(sub, render) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="capcut-cli", description=__doc__,
+    p = argparse.ArgumentParser(prog="capcut-cli", description=__doc__, epilog=EPILOG,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--json", action="store_true")

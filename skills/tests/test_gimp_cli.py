@@ -1,11 +1,9 @@
-"""
-Tests for gimp_cli.py.
+"""Tests for gimp_cli.py."""
 
-Script generation always runs; the end-to-end test runs when a gimp-console
-is found (set GIMP_CONSOLE to pick one).
-
-Run: python3 -m unittest discover -s skills/tests
-"""
+# Script generation always runs; the end-to-end test runs when a gimp-console
+# is found (set GIMP_CONSOLE to pick one).
+#
+# Run: python3 -m unittest discover -s skills/tests
 
 import argparse
 import contextlib
