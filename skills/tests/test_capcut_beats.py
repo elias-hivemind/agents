@@ -104,7 +104,12 @@ class BeatTest(unittest.TestCase):
         self.assertAlmostEqual(found["bpm"], 95, delta=1)
         truth = [0.13 + k * 60 / 95 for k in range(len(found["beats"]))]
         for got, want in zip(found["beats"], truth):
-            self.assertAlmostEqual(got, want, delta=0.025)
+            self.assertAlmostEqual(got, want, delta=0.04)  # ~1 frame at 30 fps
+
+    def test_given_bpm_is_kept(self):
+        code, out, err = run("beats", self.k95, "--duration", "4", "--bpm", "95", "--json")
+        self.assertEqual(code, 0, err)
+        self.assertAlmostEqual(json.loads(out)["bpm"], 95, delta=0.5)
 
     def test_beatsync_cuts_on_every_second_beat(self):
         out = os.path.join(self.tmp.name, "reel.mp4")

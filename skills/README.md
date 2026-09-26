@@ -1,6 +1,6 @@
 # Editor CLI skills
 
-Agent skills that turn desktop editors into command-line tools. Each skill is a `SKILL.md` plus stdlib-only Python scripts in its `scripts/` folder.
+Agent skills that turn desktop editors into command-line tools. Each skill is a `SKILL.md` plus Python scripts in its `scripts/` folder (stdlib only; `capcut-cli` beat sync uses librosa when installed).
 
 | Skill                                                 | Drives                                    | Headless?                                                      |
 | ----------------------------------------------------- | ----------------------------------------- | -------------------------------------------------------------- |

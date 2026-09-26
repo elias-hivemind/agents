@@ -1,4 +1,4 @@
-"""Beat detection and beat-synced cutting for capcut_cli.py (stdlib + ffmpeg only)."""
+"""Beat detection and beat-synced cutting for capcut_cli.py (ffmpeg; librosa if installed)."""
 
 from __future__ import annotations
 
@@ -76,12 +76,24 @@ def _normalise(x: List[float]) -> List[float]:
     return [v / peak for v in x] if peak > 0 else x
 
 
+# (ffmpeg filter, weight): full band plus the kick-drum band
+BANDS = (
+    (None, 1.0),
+    ("lowpass=f=150", 1.0),
+)
+
+
+def _mean_normalise(x: List[float]) -> List[float]:
+    mean = sum(x) / len(x) if x else 0.0
+    return [v / mean for v in x] if mean > 0 else x
+
+
 def combined_envelope(path: str, start: float, duration: float) -> List[float]:
-    """Full-band flux plus a kick-drum band (<150 Hz), each normalised."""
-    full = _normalise(onset_envelope(decode_pcm(path, start, duration)))
-    low = _normalise(onset_envelope(decode_pcm(path, start, duration, "lowpass=f=150")))
-    n = min(len(full), len(low))
-    return [full[i] + low[i] for i in range(n)]
+    """Weighted sum of per-band log-energy flux (full band + kick band)."""
+    envs = [(_mean_normalise(onset_envelope(decode_pcm(path, start, duration, af))), w)
+            for af, w in BANDS]
+    n = min(len(e) for e, _ in envs)
+    return [sum(e[i] * w for e, w in envs) for i in range(n)]
 
 
 # --------------------------------------------------------------------------
@@ -118,12 +130,12 @@ def _grid_score(env: List[float], period: float, phase: float) -> float:
     return total
 
 
-def fit_grid(env: List[float], period: float) -> Tuple[float, float]:
-    """Refine period (+/-4 %) and phase by maximising onset energy on the grid."""
+def fit_grid(env: List[float], period: float, span: float = 0.04) -> Tuple[float, float]:
+    """Refine period (+/- span) and phase by maximising onset energy on the grid."""
     best = (period, 0.0, -1.0)
     steps = 81
     for s in range(steps):
-        p = period * (0.96 + 0.08 * s / (steps - 1))
+        p = period * (1 - span + 2 * span * s / (steps - 1))
         phase = 0.0
         while phase < p:
             score = _grid_score(env, p, phase)
@@ -133,26 +145,83 @@ def fit_grid(env: List[float], period: float) -> Tuple[float, float]:
     return best[0], best[1]
 
 
-def _snap(env: List[float], pos: float, radius: int = 3) -> float:
-    i = int(round(pos))
-    lo, hi = max(0, i - radius), min(len(env) - 1, i + radius)
-    if lo > hi:
-        return pos
-    peak = max(range(lo, hi + 1), key=lambda k: env[k])
-    return peak if env[peak] > 0.3 * max(env) else pos
+def _local_score(env: List[float], period: float) -> List[float]:
+    """Onset envelope smoothed with a narrow Gaussian (sigma = period / 32)."""
+    sigma = max(0.5, period / 32)
+    radius = int(3 * sigma) + 1
+    kernel = [math.exp(-0.5 * (k / sigma) ** 2) for k in range(-radius, radius + 1)]
+    n = len(env)
+    return [sum(env[i + k - radius] * w for k, w in enumerate(kernel) if 0 <= i + k - radius < n)
+            for i in range(n)]
+
+
+def dp_track(env: List[float], period: float, tightness: float = 100.0) -> List[int]:
+    """Dynamic-programming beat tracker (Ellis 2007): follows gentle tempo drift."""
+    score = _local_score(env, period)
+    n = len(score)
+    lo, hi = max(1, int(round(period / 2))), int(round(2 * period))
+    penalty = {d: -tightness * math.log(d / period) ** 2 for d in range(lo, hi + 1)}
+    cum, back = [0.0] * n, [-1] * n
+    for i in range(n):
+        best, arg = 0.0, -1
+        for d in range(lo, min(hi, i) + 1):
+            cand = cum[i - d] + penalty[d]
+            if arg < 0 or cand > best:
+                best, arg = cand, i - d
+        cum[i] = score[i] + (best if arg >= 0 and best > 0 else 0.0)
+        back[i] = arg if arg >= 0 and best > 0 else -1
+    tail = range(max(0, n - int(period)), n)
+    i = max(tail, key=lambda k: cum[k])
+    beats = []
+    while i >= 0:
+        beats.append(i)
+        i = back[i]
+    return beats[::-1]
+
+
+def _librosa_beats(path: str, start: float, duration: float, bpm: Optional[float]) -> Optional[Dict]:
+    """Beat-track with librosa when it is installed (more accurate on real mixes)."""
+    if os.environ.get("CAPCUT_BEATS_ENGINE", "auto") == "builtin":
+        return None
+    try:
+        import librosa  # noqa: PLC0415 - optional dependency
+        import numpy as np  # noqa: PLC0415
+    except ImportError:
+        return None
+    sr = 22050
+    cmd = ["ffmpeg", "-v", "error", "-ss", f"{start:.3f}", "-t", f"{duration:.3f}", "-i", path,
+           "-vn", "-ac", "1", "-ar", str(sr), "-f", "f32le", "-"]
+    # argv list, no shell; path is a single argument
+    r = subprocess.run(cmd, capture_output=True)  # nosec B603
+    if r.returncode != 0:
+        raise CliError(f"Could not decode audio from {path}")
+    y = np.frombuffer(r.stdout, dtype=np.float32)
+    if len(y) < sr:
+        raise CliError(f"Less than 1 s of audio in {path} from {start}s")
+    tempo, times = librosa.beat.beat_track(y=y, sr=sr, units="time", start_bpm=bpm or 120.0,
+                                           tightness=400 if bpm else 100)
+    if len(times) < 2:
+        return None
+    beats = [round(start + float(t), 3) for t in times]
+    span = beats[-1] - beats[0]
+    return {"bpm": round(60 * (len(beats) - 1) / span, 2), "beats": beats, "engine": "librosa"}
 
 
 def detect_beats(path: str, start: float, duration: float, bpm: Optional[float] = None) -> Dict:
+    found = _librosa_beats(path, start, duration, bpm)
+    if found:
+        return found
     env = combined_envelope(path, start, duration)
     if not any(env):
         raise CliError("No rhythmic onsets found; pass --bpm to cut on a fixed grid.")
     period = 60 / bpm / HOP_S if bpm else estimate_period(env)
-    period, phase = fit_grid(env, period)
-    beats, t = [], phase
-    while t < len(env):
-        beats.append(round(start + _snap(env, t) * HOP_S, 3))
-        t += period
-    return {"bpm": round(60 / (period * HOP_S), 2), "beats": beats}
+    # a user-given BPM is trusted: only fine-tune it by +/-0.5 %
+    period, _ = fit_grid(env, period, 0.005 if bpm else 0.04)
+    frames = dp_track(env, period, 400.0 if bpm else 100.0)
+    beats = [round(start + f * HOP_S, 3) for f in frames]
+    span = beats[-1] - beats[0] if len(beats) > 1 else 0
+    tempo = 60 * (len(beats) - 1) / span if span > 0 else 60 / (period * HOP_S)
+    return {"bpm": round(tempo, 2), "beats": beats, "engine": "builtin"}
 
 
 # --------------------------------------------------------------------------
@@ -224,7 +293,7 @@ def cmd_beats(args) -> int:
     if args.json:
         print(json.dumps(result, indent=2))
     else:
-        print(f"bpm: {result['bpm']}")
+        print(f"bpm: {result['bpm']} ({result['engine']})")
         print(" ".join(f"{b:.3f}" for b in result["beats"]))
     return 0
 
@@ -248,7 +317,7 @@ def cmd_beatsync(args) -> int:
         start = next((b for b in found["beats"] if b >= start), start)
         duration = min(duration, music["duration"] - start)
     segs = plan_segments(found["beats"], start, duration, args.every, args.shift)
-    print(f"bpm {found['bpm']}: {len(segs)} shots over {duration:.2f}s, song from {start:.2f}s",
+    print(f"bpm {found['bpm']} ({found['engine']}): {len(segs)} shots over {duration:.2f}s, song from {start:.2f}s",
           flush=True)
     argv = _segment_inputs(args.inputs, segs, args.fps)
     fade = max(0.0, duration - args.fade_out)
