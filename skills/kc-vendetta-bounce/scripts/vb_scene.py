@@ -129,8 +129,8 @@ def spectrum(music: str, start: float, duration: float, fps: int, bars: int = 15
     db = np.clip((db - lo) / max(1e-6, hi - lo), 0, 1) ** 1.4 * np.linspace(0.95, 0.7, bars)[None, :]
     held = np.empty_like(db)
     prev = np.zeros(bars, np.float32)
-    for f in range(len(db)):
-        prev = np.maximum(db[f], prev * 0.82)
+    for f, row in enumerate(db):
+        prev = np.maximum(row, prev * 0.82)
         held[f] = prev
     return held.astype(np.float32)
 
