@@ -5,7 +5,7 @@ description: Command-line tooling around CapCut — list and inspect CapCut desk
 
 # capcut-cli
 
-CapCut has **no official CLI, scripting API or headless export**. `scripts/capcut_cli.py` automates only what can be done safely:
+CapCut has **no official CLI, scripting API or headless export**. `scripts/capcut_cli.py` (with its helper `scripts/capcut_ffmpeg.py`, keep them together) automates only what can be done safely:
 
 - **Draft tools** read and patch CapCut desktop draft folders on disk.
 - **Edit tools** do the everyday CapCut operations directly with ffmpeg. The result is a finished MP4, not a CapCut draft.
