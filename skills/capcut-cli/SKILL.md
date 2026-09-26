@@ -1,14 +1,14 @@
 ---
 name: capcut-cli
-description: Command-line tooling around CapCut — list and inspect CapCut desktop drafts, find offline media, relink moved footage, zip-backup drafts — plus CapCut-style quick edits rendered with ffmpeg (trim, concat to a 9:16 canvas, speed, reframe/crop to vertical, burn SRT captions, replace/mute/extract audio). Use when the user mentions CapCut drafts or projects, wants CapCut "as a CLI", or needs fast reel edits without opening an editor.
+description: Command-line tooling around CapCut — list and inspect CapCut desktop drafts, find offline media, relink moved footage, zip-backup drafts — plus CapCut-style quick edits rendered with ffmpeg (trim, concat to a 9:16 canvas, speed, reframe/crop to vertical, burn SRT captions, replace/mute/extract audio, auto beat-sync cuts to a music track). Use when the user mentions CapCut drafts or projects, wants CapCut "as a CLI", or needs fast reel edits without opening an editor.
 ---
 
 # capcut-cli
 
-CapCut has **no official CLI, scripting API or headless export**. `scripts/capcut_cli.py` (with its helper `scripts/capcut_ffmpeg.py`, keep them together) automates only what can be done safely:
+CapCut has **no official CLI, scripting API or headless export**. `scripts/capcut_cli.py` (with its helpers `scripts/capcut_ffmpeg.py` and `scripts/capcut_beats.py`, keep them together) automates only what can be done safely:
 
 - **Draft tools** read and patch CapCut desktop draft folders on disk.
-- **Edit tools** do the everyday CapCut operations directly with ffmpeg. The result is a finished MP4, not a CapCut draft.
+- **Edit tools** do the everyday CapCut operations directly with ffmpeg, including beat-synced cutting. The result is a finished MP4, not a CapCut draft.
 
 Tell the user this up front if they expect the CLI to drive the CapCut app or trigger its Export button. It cannot.
 
@@ -57,6 +57,26 @@ python3 $S audio reel.mp4 --extract -o voice.m4a
 ```
 
 `concat` normalises every clip to one canvas and fps, and adds silent audio to clips that have none, so mixed sources join cleanly.
+
+## Beat sync (cut to the music)
+
+```bash
+python3 $S beats track.mp3                                   # print BPM + beat times
+python3 $S beats track.mp3 --music-start 42 --duration 20 --json
+python3 $S beatsync a.mp4 b.mp4 photo.jpg c.mp4 --music track.mp3 \
+    --music-start 42 --duration 15 --every 2 -o reel.mp4
+```
+
+- `beatsync` detects the tempo, then cuts to the next clip every `--every` beats (default 2). Use 1 for fast cuts and 4 for one shot per bar.
+- Clips and photos are used in the order given and loop if the song outlasts them. Each video continues from where it last stopped, so repeated clips show new footage.
+- The song starts on the first beat at or after `--music-start`, so the reel opens on the beat. Pass `--no-align` to start at exactly `--music-start`.
+- Output is 1080x1920 by default (`--size`, `--mode crop|pad`), 30 fps, with the music as the only audio and a 0.5 s fade at the end.
+- Cuts are frame-accurate and land within about one frame (~35 ms) of the beat.
+- Beat detection uses **librosa** when it is installed (`pip install librosa`), which is much more accurate on real mixes. Without it, a built-in detector (ffmpeg + stdlib) is used. `beats` shows which engine ran. Set `CAPCUT_BEATS_ENGINE=builtin` to force the built-in one.
+- Beats are tracked one by one (dynamic programming), not on a fixed grid, so they follow songs whose tempo drifts. AI-generated tracks often do.
+- If the detected BPM is double or half what you hear, pass `--bpm` with the real tempo. If cuts fall on the "and" instead of the beat, try `--shift 1`.
+- Pick the music start: run `beats` first, or ask the user where the drop or hook is. For a 15 s reel, starting on the chorus usually works best.
+- Music must be a file the user has the rights to post. Tracks can't be pulled from Spotify or TikTok.
 
 ## Kash Crown hand-off
 
