@@ -161,7 +161,7 @@ def _box(a: np.ndarray, k: int, axis: int) -> np.ndarray:
 
 
 def blur(a: np.ndarray, r: float) -> np.ndarray:
-    """Gaussian-like blur (3 box passes) for float 2-D arrays."""
+    """Blur a float 2-D array with three box passes (≈ Gaussian, sigma r)."""
     k = int(round(math.sqrt(4 * r * r + 1)))  # box width giving sigma≈r over 3 passes
     if k < 2:
         return a.astype(np.float32)
@@ -212,7 +212,7 @@ def _smooth(raw: np.ndarray) -> np.ndarray:
 
 
 def analyze(y: np.ndarray, sr: int, n_frames: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Returns (levels[n_frames, 48] in 0..1 smoothed, bass[n_frames] 0..1, rms[n_frames])."""
+    """Return (levels[n_frames, 48] 0..1 smoothed, bass[n_frames] 0..1, rms[n_frames])."""
     n_fft = 2048
     win = np.hanning(n_fft).astype(np.float32)
     padded = np.pad(y, (n_fft // 2, n_fft * 2))
@@ -407,6 +407,7 @@ class TitlePlate:
     """Precomputed title layers cropped to a bbox: fill rgb, alpha, glow rgb, shadow."""
 
     def __init__(self, cv: Canvas, text: Text, center_y: float, rng: np.random.Generator):
+        """Build every title layer once; only the glow strength changes per frame."""
         lay = _layout(cv, text, center_y)
         mask, vmap, sub = _masks(cv, text, lay)
         grad, alpha_t, grain = _gold(cv, mask, vmap, int(10 + 4 * len(text.title)), rng)
@@ -440,6 +441,7 @@ class Embers:
     """Floating ember particles drawn additively."""
 
     def __init__(self, cv: Canvas, rng: np.random.Generator):
+        """Scatter embers over the frame and prebuild the four sprite sizes."""
         self.cv, self.rng = cv, rng
         n = int(110 * (cv.width * cv.height) / (1280 * 720))
         self.x = rng.uniform(0, cv.width, n)
@@ -493,6 +495,7 @@ class Bars:
     """The 48 bounce bars on their 70% black strip."""
 
     def __init__(self, cv: Canvas):
+        """Precompute bar colours and x positions for this canvas."""
         self.cv = cv
         self.height = int(round(BAR_H_720 * cv.scale))
         stops = np.stack([hex_rgb(c) for c in BAR_PALETTE])
@@ -523,6 +526,7 @@ class Scene:
     """One output format of the look; call frame() once per video frame, in order."""
 
     def __init__(self, cv: Canvas, text: Text, song_seconds: float, seed: int):
+        """Precompute smoke, masks, embers, bars and title for this canvas."""
         self.cv = cv
         self.song_seconds = max(song_seconds, 1.0)
         rng = np.random.default_rng(seed)
@@ -677,14 +681,49 @@ def _parse_args() -> argparse.Namespace:
     return args
 
 
+def _tiktok_window(args: argparse.Namespace, rms: np.ndarray, bass: np.ndarray,
+                   total_f: int) -> tuple[int, int]:
+    """(start frame, length in frames) of the TikTok cut."""
+    tt_len = min(int(round(args.tiktok_length * FPS)), total_f)
+    forced = parse_time(args.tiktok_start)
+    if forced is not None:
+        return min(int(forced * FPS), total_f - tt_len), tt_len
+    return loudest_window(rms, bass, tt_len), tt_len
+
+
+def _jobs(args: argparse.Namespace, ffmpeg: str, text: Text, total_f: int,
+          window: tuple[int, int]) -> list[Job]:
+    """Build the YouTube and/or TikTok jobs the CLI flags ask for."""
+    out_dir = args.out or args.audio.parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stem = safe_filename(text.title)
+    tt_start, tt_len = window
+    cap = total_f if args.preview is None else int(args.preview * FPS)
+
+    def canvas(w: int, h: int) -> Canvas:
+        return Canvas(int(round(w * args.scale / 2)) * 2, int(round(h * args.scale / 2)) * 2)
+
+    jobs = []
+    if args.only in ("both", "youtube"):
+        n = min(total_f, cap)
+        peak = tt_start + min(tt_len // 3, 4 * FPS)
+        jobs.append(Job(ffmpeg, args.audio, out_dir / f"{stem}_Youtube_Bars_HD.mp4",
+                        canvas(1280, 720), text, 0, n,
+                        fade_out=1.5 if args.preview is None else 0.0,
+                        thumb_at=peak if peak < n else n // 2,
+                        thumb_path=out_dir / f"{stem}_Thumbnail.png"))
+    if args.only in ("both", "tiktok"):
+        jobs.append(Job(ffmpeg, args.audio,
+                        out_dir / f"{stem}_TikTok_{int(round(args.tiktok_length))}s.mp4",
+                        canvas(720, 1280), text, tt_start, min(tt_len, cap), fade_out=1.2))
+    return jobs
+
+
 def main() -> None:
     """CLI entry point: analyse the song, then render the requested outputs."""
     args = _parse_args()
     text = Text((args.title or title_from_filename(args.audio)).strip().upper(),
                 args.tagline.strip(), args.font)
-    out_dir = args.out or args.audio.parent
-    out_dir.mkdir(parents=True, exist_ok=True)
-    stem = safe_filename(text.title)
     ffmpeg = find_ffmpeg()
 
     print(f"KC VENDETTA BOUNCE → {text.title!r} / {text.tagline!r}", file=sys.stderr)
@@ -694,40 +733,18 @@ def main() -> None:
     levels, bass, rms = analyze(y, ANALYSIS_SR, total_f)
     feats = Analysis(levels, bass, song_s)
 
-    tt_len = min(int(round(args.tiktok_length * FPS)), total_f)
-    forced = parse_time(args.tiktok_start)
-    tt_start = (min(int(forced * FPS), total_f - tt_len) if forced is not None
-                else loudest_window(rms, bass, tt_len))
-    print(f"  song {song_s:.1f}s · TikTok window {tt_start / FPS:.1f}s → "
-          f"{(tt_start + tt_len) / FPS:.1f}s", file=sys.stderr)
-
-    def canvas(w: int, h: int) -> Canvas:
-        return Canvas(int(round(w * args.scale / 2)) * 2, int(round(h * args.scale / 2)) * 2)
-
-    def length(full: int) -> int:
-        return full if args.preview is None else min(full, int(args.preview * FPS))
+    window = _tiktok_window(args, rms, bass, total_f)
+    print(f"  song {song_s:.1f}s · TikTok window {window[0] / FPS:.1f}s → "
+          f"{sum(window) / FPS:.1f}s", file=sys.stderr)
 
     outputs = []
-    if args.only in ("both", "youtube"):
-        n = length(total_f)
-        peak = tt_start + min(tt_len // 3, 4 * FPS)
-        job = Job(ffmpeg, args.audio, out_dir / f"{stem}_Youtube_Bars_HD.mp4", canvas(1280, 720),
-                  text, 0, n, fade_out=1.5 if args.preview is None else 0.0,
-                  thumb_at=peak if peak < n else n // 2,
-                  thumb_path=out_dir / f"{stem}_Thumbnail.png")
+    for job in _jobs(args, ffmpeg, text, total_f, window):
         render(job, feats, args.seed)
-        outputs += [job.out, job.thumb_path]
-    if args.only in ("both", "tiktok"):
-        job = Job(ffmpeg, args.audio,
-                  out_dir / f"{stem}_TikTok_{int(round(args.tiktok_length))}s.mp4",
-                  canvas(720, 1280), text, tt_start, length(tt_len), fade_out=1.2)
-        render(job, feats, args.seed)
-        outputs.append(job.out)
+        outputs += [p for p in (job.out, job.thumb_path) if p is not None]
 
     print("\nDONE", file=sys.stderr)
     for path in outputs:
         print(path)
-
 
 if __name__ == "__main__":
     main()
