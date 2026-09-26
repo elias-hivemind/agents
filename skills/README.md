@@ -1,6 +1,6 @@
 # Editor CLI skills
 
-Agent skills that turn desktop editors into command-line tools. Each skill is a `SKILL.md` plus one stdlib-only Python script.
+Agent skills that turn desktop editors into command-line tools. Each skill is a `SKILL.md` plus stdlib-only Python scripts in its `scripts/` folder.
 
 | Skill                                                 | Drives                                    | Headless?                                                      |
 | ----------------------------------------------------- | ----------------------------------------- | -------------------------------------------------------------- |
