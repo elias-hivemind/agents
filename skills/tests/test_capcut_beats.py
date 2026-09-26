@@ -68,7 +68,7 @@ def frame_colours(path):
                          capture_output=True, check=True).stdout
     names = []
     for i in range(0, len(raw), 3):
-        r, g, b = raw[i:i + 3]
+        r, g = raw[i], raw[i + 1]
         names.append("Y" if r > 150 and g > 150 else "R" if r > 150 else "G" if g > 100 else "B")
     return names
 
