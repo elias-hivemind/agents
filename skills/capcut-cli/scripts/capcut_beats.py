@@ -199,7 +199,7 @@ def _librosa_beats(path: str, start: float, duration: float, bpm: Optional[float
     if len(y) < sr:
         raise CliError(f"Less than 1 s of audio in {path} from {start}s")
     _, times = librosa.beat.beat_track(y=y, sr=sr, units="time", start_bpm=bpm or 120.0,
-                                           tightness=400 if bpm else 100)
+                                       tightness=400 if bpm else 100)
     if len(times) < 2:
         return None
     beats = [round(start + float(t), 3) for t in times]
