@@ -6,7 +6,7 @@ Agent skills that turn desktop editors into command-line tools. Each skill is a 
 | ----------------------------------------------------- | ----------------------------------------- | -------------------------------------------------------------- |
 | [`gimp-cli`](gimp-cli/SKILL.md)                       | GIMP 2.10 / 3.x via Script-Fu batch mode  | Yes                                                            |
 | [`davinci-resolve-cli`](davinci-resolve-cli/SKILL.md) | DaVinci Resolve 18+ via its scripting API | Needs Resolve running; external scripting needs Resolve Studio |
-| [`capcut-cli`](capcut-cli/SKILL.md)                   | CapCut desktop drafts + ffmpeg edits      | Yes. CapCut itself has no API, so edits render through ffmpeg  |
+| [`capcut-cli`](capcut-cli/SKILL.md)                   | CapCut drafts + ffmpeg edits + beat sync  | Yes. CapCut itself has no API, so edits render through ffmpeg  |
 
 ## Install
 

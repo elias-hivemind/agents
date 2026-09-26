@@ -26,7 +26,7 @@ covers what can be automated safely:
   Drafts (CapCut desktop project folders, CapCut must be CLOSED to edit):
     doctor, drafts, inspect, media, relink, backup
   Quick edits rendered with ffmpeg (no CapCut needed):
-    probe, trim, concat, speed, reframe, captions, audio
+    probe, trim, concat, speed, reframe, captions, audio, beats, beatsync
 
 Newer CapCut desktop builds encrypt draft_content.json. For those drafts
 `drafts`, `backup` and `media --meta` still work (they read the plain
@@ -43,6 +43,7 @@ Usage examples --
   capcut_cli.py concat a.mp4 b.mp4 c.mp4 -o reel.mp4 --size 1080x1920
   capcut_cli.py reframe wide.mp4 -o vertical.mp4 --aspect 9:16 --mode crop
   capcut_cli.py captions reel.mp4 --srt reel.srt -o reel_captioned.mp4
+  capcut_cli.py beatsync a.mp4 b.mp4 c.jpg --music beat.mp3 --duration 15 -o reel.mp4
 """
 
 
@@ -57,6 +58,8 @@ from capcut_ffmpeg import (  # noqa: E402 - sibling module in this scripts/ fold
     cmd_trim,
     probe,
 )
+
+from capcut_beats import add_beat_parsers  # noqa: E402
 
 __all__ = ["CliError", "_atempo_chain", "main", "probe"]
 
@@ -433,6 +436,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_draft_parsers(sub, common)
     _add_clip_parsers(sub, render)
     _add_overlay_parsers(sub, render)
+    add_beat_parsers(sub, common, render)
     return p
 
 
