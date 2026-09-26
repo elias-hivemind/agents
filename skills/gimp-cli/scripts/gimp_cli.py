@@ -97,7 +97,7 @@ def find_gimp(explicit: Optional[str]) -> str:
 def gimp_version(exe: str) -> tuple:
     try:
         # argv list, no shell; exe is validated by find_gimp()
-        out = subprocess.run([exe, "--version"], capture_output=True,  # nosec B603
+        out = subprocess.run([exe, "--version"], capture_output=True,  # nosec B603 # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
                              text=True, timeout=60).stdout
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise CliError(f"Failed to run {exe} --version: {exc}") from exc
@@ -253,7 +253,7 @@ def run_batch(exe: str, major: int, commands: List[str], timeout: int,
         print("+ " + " ".join(argv), file=sys.stderr)
     try:
         # argv list, no shell; exe validated by find_gimp(), paths are Scheme-quoted
-        proc = subprocess.run(argv, capture_output=True, text=True,  # nosec B603
+        proc = subprocess.run(argv, capture_output=True, text=True,  # nosec B603 # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
                               timeout=timeout, errors="replace")
     except subprocess.TimeoutExpired as exc:
         raise CliError(f"GIMP timed out after {timeout}s") from exc
