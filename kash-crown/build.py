@@ -41,7 +41,8 @@ def build_note(sha):
     """Write the Obsidian note: frontmatter, SKILL.md body, renderer source."""
     text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
     body = text.split("---", 2)[2].strip() if text.startswith("---") else text
-    script = (SKILL / "scripts" / "render.py").read_text(encoding="utf-8")
+    script = "\n".join(f"# ── scripts/{p.name} ──\n{p.read_text(encoding='utf-8')}"
+                        for p in sorted((SKILL / "scripts").glob("*.py")))
     today = datetime.date.today().isoformat()
     NOTE.parent.mkdir(parents=True, exist_ok=True)
     NOTE.write_text(f"""---

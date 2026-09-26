@@ -55,7 +55,7 @@ Requirements: Python 3.9+, `numpy`, `pillow`, and ffmpeg (system install or `ima
 
 ## Changing the look
 
-The look is locked in the constants at the top of `scripts/render.py`. After editing, rebuild
+The look is locked in the constants in `scripts/kcvb_style.py`. After editing, rebuild
 the zip and the Obsidian note, then re-run the installer:
 
 ```bash

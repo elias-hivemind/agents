@@ -19,7 +19,7 @@ video services, no AI image generation, no randomness between runs.
 | Bars | 48 bars across the full bottom, 200px strip at 720p, gradient `#FF3300 #FF6600 #FFAA00 #FFDD00 #FFFF00 #AAFF00 #00FFCC #00FFFF`, white top-edge highlight, 70% black backdrop, attack 0.70 / release 0.75 |
 | Extras | No watermark, no ID text |
 
-Every value above is a constant at the top of `scripts/render.py`. Change the look **only** when
+Every value above is a constant in `scripts/kcvb_style.py`. Change the look **only** when
 the user explicitly asks to change the signature style itself, and then edit the constants, not
 per-song flags.
 
@@ -105,6 +105,9 @@ Offer exactly one follow-up: a different TikTok section, or a 1080p render.
 
 ## Files
 
-- `scripts/render.py` is the renderer (the single source of truth for the look)
+- `scripts/render.py` is the CLI entry point (run this one)
+- `scripts/kcvb_style.py` holds the locked look: every color, size and timing constant
+- `scripts/kcvb_audio.py` decodes the song, measures the 48 bands and finds the loudest section
+- `scripts/kcvb_scene.py` draws the smoke, embers, gold title and bounce bars
 - `assets/fonts/Anton-Regular.ttf` is the title font (SIL OFL 1.1, license in `OFL.txt`)
 - `assets/reference/` holds the original spec and the Vendetta Soul reference frame

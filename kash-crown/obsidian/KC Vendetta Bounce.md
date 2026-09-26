@@ -6,7 +6,7 @@ type: claude-skill
 skill_name: kc-vendetta-bounce
 status: active
 updated: 2026-09-26
-zip_sha256: 5d7c67f3e2b1f5cd1e884fb45a0538fd537f2ffb3bf84a8a298139aeb509a656
+zip_sha256: f4c21267e43f48e4da47c1c79994d34aa0bcd82d6ef660c14488edfffb62a3ab
 ---
 
 > [!tip] How to use
@@ -36,7 +36,7 @@ video services, no AI image generation, no randomness between runs.
 | Bars | 48 bars across the full bottom, 200px strip at 720p, gradient `#FF3300 #FF6600 #FFAA00 #FFDD00 #FFFF00 #AAFF00 #00FFCC #00FFFF`, white top-edge highlight, 70% black backdrop, attack 0.70 / release 0.75 |
 | Extras | No watermark, no ID text |
 
-Every value above is a constant at the top of `scripts/render.py`. Change the look **only** when
+Every value above is a constant in `scripts/kcvb_style.py`. Change the look **only** when
 the user explicitly asks to change the signature style itself, and then edit the constants, not
 per-song flags.
 
@@ -122,7 +122,10 @@ Offer exactly one follow-up: a different TikTok section, or a 1080p render.
 
 ## Files
 
-- `scripts/render.py` is the renderer (the single source of truth for the look)
+- `scripts/render.py` is the CLI entry point (run this one)
+- `scripts/kcvb_style.py` holds the locked look: every color, size and timing constant
+- `scripts/kcvb_audio.py` decodes the song, measures the 48 bands and finds the loudest section
+- `scripts/kcvb_scene.py` draws the smoke, embers, gold title and bounce bars
 - `assets/fonts/Anton-Regular.ttf` is the title font (SIL OFL 1.1, license in `OFL.txt`)
 - `assets/reference/` holds the original spec and the Vendetta Soul reference frame
 
@@ -134,181 +137,19 @@ Offer exactly one follow-up: a different TikTok section, or a 1080p render.
 > Edit the file in the repo, then run `python3 kash-crown/build.py` to refresh this note and the zip.
 
 ```python
-#!/usr/bin/env python3
-"""KC VENDETTA BOUNCE — Kash Crown signature music visualizer.
-
-Renders one song into:
-  1. {TITLE}_Youtube_Bars_HD.mp4  16:9 1280x720 @24fps, full song length
-  2. {TITLE}_TikTok_63s.mp4       9:16 720x1280 @24fps, loudest 63s section
-  3. {TITLE}_Thumbnail.png        16:9 still from the loudest moment
-
-Look: black + slow red/gold smoke + embers, distressed cracked gold title,
-gold tagline, 48 beat-reactive bars (orange -> yellow -> cyan) on a 70% black strip.
-
-Requires: Python 3.9+, numpy, Pillow 9.1+, and ffmpeg (on PATH, or `pip install imageio-ffmpeg`).
-"""
+# ── scripts/kcvb_audio.py ──
+"""KC VENDETTA BOUNCE: audio decoding, 48-band analysis and loudest-section search."""
 from __future__ import annotations
 
-import argparse
-import math
-import re
-import shutil
 # subprocess only runs the resolved ffmpeg binary with a fixed argv list (no shell).
 import subprocess  # nosec B404
 import sys
-import time
-from dataclasses import dataclass
 from pathlib import Path
 
-try:
-    import numpy as np
-    from PIL import Image, ImageDraw, ImageFont
-except ImportError as exc:  # pragma: no cover
-    sys.exit(f"Missing dependency: {exc.name}. Run: pip install numpy pillow imageio-ffmpeg")
+import numpy as np
 
-# ── Locked style contract (do not change per song) ──────────────────────────
-FPS = 24
-N_BARS = 48
-BAR_H_720 = 200                     # bar strip height at 720p short side
-BAR_STRIP_OPACITY = 0.70            # black backdrop behind bars
-ATTACK = 0.70                       # rise coefficient (fast)
-RELEASE = 0.75                      # fall retention (slow)
-TIKTOK_SECONDS = 63.0
-BAR_PALETTE = ["#FF3300", "#FF6600", "#FFAA00", "#FFDD00",
-               "#FFFF00", "#AAFF00", "#00FFCC", "#00FFFF"]
-GOLD_STOPS = [(0.00, "#FFF3C4"), (0.30, "#F4C659"), (0.55, "#B98320"),
-              (0.72, "#E3AE45"), (1.00, "#6E420B")]
-TAGLINE_GOLD = "#E9B45A"
-GLOW_RED = (1.0, 0.22, 0.02)
-SKILL_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_FONT = SKILL_DIR / "assets" / "fonts" / "Anton-Regular.ttf"
-ANALYSIS_SR = 22050
-JUNK_WORDS = (r"(final|master(ed)?|mix(down)?|v\d+|wav|mp3|export|bounce|prod|clean|dirty"
-              r"|explicit|\d{2,3}\s?bpm)")
-BICUBIC = Image.Resampling.BICUBIC
-BILINEAR = Image.Resampling.BILINEAR
+from kcvb_style import ANALYSIS_SR, ATTACK, FPS, N_BARS, RELEASE
 
-
-@dataclass(frozen=True)
-class Canvas:
-    """Output frame size; `scale` is the short side relative to 720px."""
-
-    width: int
-    height: int
-
-    @property
-    def scale(self) -> float:
-        """Pixel multiplier relative to the 720p spec."""
-        return min(self.width, self.height) / 720.0
-
-    @property
-    def portrait(self) -> bool:
-        """True for 9:16 output."""
-        return self.height > self.width
-
-    def grid(self) -> tuple[np.ndarray, np.ndarray]:
-        """Per-pixel (y, x) float32 coordinates."""
-        return np.meshgrid(np.arange(self.height, dtype=np.float32),
-                           np.arange(self.width, dtype=np.float32), indexing="ij")
-
-
-@dataclass(frozen=True)
-class Text:
-    """The per-song words and the font they are set in."""
-
-    title: str
-    tagline: str
-    font: Path
-
-
-# ── Utilities ───────────────────────────────────────────────────────────────
-def hex_rgb(code: str) -> np.ndarray:
-    """'#RRGGBB' -> float32 RGB in 0..1."""
-    code = code.lstrip("#")
-    return np.array([int(code[i:i + 2], 16) / 255.0 for i in (0, 2, 4)], dtype=np.float32)
-
-
-def find_ffmpeg() -> str:
-    """Absolute path of a real ffmpeg binary (system first, then imageio-ffmpeg)."""
-    exe = shutil.which("ffmpeg")
-    if not exe:
-        try:
-            import imageio_ffmpeg  # pylint: disable=import-outside-toplevel
-            exe = imageio_ffmpeg.get_ffmpeg_exe()
-        except (ImportError, RuntimeError):
-            exe = None
-    if not exe or not Path(exe).is_file():
-        sys.exit("ffmpeg not found. Install ffmpeg or run: pip install imageio-ffmpeg")
-    return str(Path(exe).resolve())
-
-
-def parse_time(value: str | None) -> float | None:
-    """'75', '75.5' or '1:15' -> seconds."""
-    if value is None:
-        return None
-    if ":" in value:
-        minutes, seconds = value.split(":", 1)
-        return int(minutes) * 60 + float(seconds)
-    return float(value)
-
-
-def title_from_filename(path: Path) -> str:
-    """'Vendetta_Soul_(FINAL MASTER).wav' -> 'VENDETTA SOUL'."""
-    name = path.stem
-    name = re.sub(r"[\[(].*?[\])]", " ", name)
-    name = re.sub(r"[_\-.]+", " ", name)
-    name = re.sub(rf"\b{JUNK_WORDS}\b", " ", name, flags=re.I)
-    name = re.sub(r"\s+", " ", name).strip()
-    return (name or path.stem).upper()
-
-
-def safe_filename(title: str) -> str:
-    """Title -> file-name stem using only [A-Za-z0-9_]."""
-    stem = re.sub(r"[^A-Za-z0-9]+", "_", title).strip("_")
-    return stem or "SONG"
-
-
-def fbm(h: int, w: int, rng: np.random.Generator, base: int = 3, octaves: int = 5,
-        persistence: float = 0.55) -> np.ndarray:
-    """Fractal value noise in [0,1], float32 (h, w)."""
-    acc = np.zeros((h, w), np.float32)
-    amp, total = 1.0, 0.0
-    aspect = w / h
-    for octave in range(octaves):
-        gh = base * 2 ** octave + 1
-        gw = max(2, int(round(gh * aspect)))
-        grid = rng.random((gh, gw)).astype(np.float32)
-        layer = np.asarray(Image.fromarray(grid).resize((w, h), BICUBIC), np.float32)
-        acc += amp * layer
-        total += amp
-        amp *= persistence
-    acc /= total
-    lo, hi = np.percentile(acc, 1), np.percentile(acc, 99)
-    return np.clip((acc - lo) / max(hi - lo, 1e-6), 0, 1)
-
-
-def _box(a: np.ndarray, k: int, axis: int) -> np.ndarray:
-    pad = [(0, 0)] * a.ndim
-    pad[axis] = (k // 2 + 1, k // 2)
-    c = np.cumsum(np.pad(a, pad, mode="edge"), axis=axis, dtype=np.float64)
-    hi = np.take(c, np.arange(k, c.shape[axis]), axis=axis)
-    lo = np.take(c, np.arange(0, c.shape[axis] - k), axis=axis)
-    return ((hi - lo) / k).astype(np.float32)
-
-
-def blur(a: np.ndarray, r: float) -> np.ndarray:
-    """Blur a float 2-D array with three box passes (≈ Gaussian, sigma r)."""
-    k = int(round(math.sqrt(4 * r * r + 1)))  # box width giving sigma≈r over 3 passes
-    if k < 2:
-        return a.astype(np.float32)
-    k |= 1
-    out = a.astype(np.float32)
-    for _ in range(3):
-        out = _box(_box(out, k, 0), k, 1)
-    return out
-
-
-# ── Audio analysis ──────────────────────────────────────────────────────────
 def decode_mono(ffmpeg: str, path: Path, sr: int = ANALYSIS_SR) -> np.ndarray:
     """Decode any audio file to mono float32 at `sr` Hz."""
     argv = [ffmpeg, "-v", "error", "-i", str(path), "-ac", "1", "-ar", str(sr), "-f", "f32le", "-"]
@@ -390,6 +231,19 @@ def loudest_window(rms: np.ndarray, bass: np.ndarray, win_frames: int) -> int:
         start = lo + int(np.argmax(onset[lo:hi + 1]))
     return min(start, n - win_frames)
 
+# ── scripts/kcvb_scene.py ──
+"""KC VENDETTA BOUNCE: title plate, embers, bounce bars and the per-frame scene."""
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from pathlib import Path
+
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+
+from kcvb_style import (BAR_H_720, BAR_PALETTE, BAR_STRIP_OPACITY, BILINEAR, FPS, GLOW_RED,
+                        GOLD_STOPS, N_BARS, TAGLINE_GOLD, Canvas, Text, blur, fbm, hex_rgb)
 
 # ── Title plate ─────────────────────────────────────────────────────────────
 def tracked_width(font: ImageFont.FreeTypeFont, text: str, tracking: float) -> float:
@@ -716,6 +570,192 @@ class Scene:
             rgb *= fade
         return (np.clip(rgb, 0, 1) * 255).astype(np.uint8)
 
+# ── scripts/kcvb_style.py ──
+"""KC VENDETTA BOUNCE: the locked style contract plus shared canvas and noise helpers."""
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+# ── Locked style contract (do not change per song) ──────────────────────────
+FPS = 24
+N_BARS = 48
+BAR_H_720 = 200                     # bar strip height at 720p short side
+BAR_STRIP_OPACITY = 0.70            # black backdrop behind bars
+ATTACK = 0.70                       # rise coefficient (fast)
+RELEASE = 0.75                      # fall retention (slow)
+TIKTOK_SECONDS = 63.0
+BAR_PALETTE = ["#FF3300", "#FF6600", "#FFAA00", "#FFDD00",
+               "#FFFF00", "#AAFF00", "#00FFCC", "#00FFFF"]
+GOLD_STOPS = [(0.00, "#FFF3C4"), (0.30, "#F4C659"), (0.55, "#B98320"),
+              (0.72, "#E3AE45"), (1.00, "#6E420B")]
+TAGLINE_GOLD = "#E9B45A"
+GLOW_RED = (1.0, 0.22, 0.02)
+SKILL_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_FONT = SKILL_DIR / "assets" / "fonts" / "Anton-Regular.ttf"
+ANALYSIS_SR = 22050
+BICUBIC = Image.Resampling.BICUBIC
+BILINEAR = Image.Resampling.BILINEAR
+
+
+@dataclass(frozen=True)
+class Canvas:
+    """Output frame size; `scale` is the short side relative to 720px."""
+
+    width: int
+    height: int
+
+    @property
+    def scale(self) -> float:
+        """Pixel multiplier relative to the 720p spec."""
+        return min(self.width, self.height) / 720.0
+
+    @property
+    def portrait(self) -> bool:
+        """True for 9:16 output."""
+        return self.height > self.width
+
+    def grid(self) -> tuple[np.ndarray, np.ndarray]:
+        """Per-pixel (y, x) float32 coordinates."""
+        return np.meshgrid(np.arange(self.height, dtype=np.float32),
+                           np.arange(self.width, dtype=np.float32), indexing="ij")
+
+
+@dataclass(frozen=True)
+class Text:
+    """The per-song words and the font they are set in."""
+
+    title: str
+    tagline: str
+    font: Path
+
+def hex_rgb(code: str) -> np.ndarray:
+    """'#RRGGBB' -> float32 RGB in 0..1."""
+    code = code.lstrip("#")
+    return np.array([int(code[i:i + 2], 16) / 255.0 for i in (0, 2, 4)], dtype=np.float32)
+
+def fbm(h: int, w: int, rng: np.random.Generator, base: int = 3, octaves: int = 5,
+        persistence: float = 0.55) -> np.ndarray:
+    """Fractal value noise in [0,1], float32 (h, w)."""
+    acc = np.zeros((h, w), np.float32)
+    amp, total = 1.0, 0.0
+    aspect = w / h
+    for octave in range(octaves):
+        gh = base * 2 ** octave + 1
+        gw = max(2, int(round(gh * aspect)))
+        grid = rng.random((gh, gw)).astype(np.float32)
+        layer = np.asarray(Image.fromarray(grid).resize((w, h), BICUBIC), np.float32)
+        acc += amp * layer
+        total += amp
+        amp *= persistence
+    acc /= total
+    lo, hi = np.percentile(acc, 1), np.percentile(acc, 99)
+    return np.clip((acc - lo) / max(hi - lo, 1e-6), 0, 1)
+
+
+def _box(a: np.ndarray, k: int, axis: int) -> np.ndarray:
+    pad = [(0, 0)] * a.ndim
+    pad[axis] = (k // 2 + 1, k // 2)
+    c = np.cumsum(np.pad(a, pad, mode="edge"), axis=axis, dtype=np.float64)
+    hi = np.take(c, np.arange(k, c.shape[axis]), axis=axis)
+    lo = np.take(c, np.arange(0, c.shape[axis] - k), axis=axis)
+    return ((hi - lo) / k).astype(np.float32)
+
+
+def blur(a: np.ndarray, r: float) -> np.ndarray:
+    """Blur a float 2-D array with three box passes (≈ Gaussian, sigma r)."""
+    k = int(round(math.sqrt(4 * r * r + 1)))  # box width giving sigma≈r over 3 passes
+    if k < 2:
+        return a.astype(np.float32)
+    k |= 1
+    out = a.astype(np.float32)
+    for _ in range(3):
+        out = _box(_box(out, k, 0), k, 1)
+    return out
+
+# ── scripts/render.py ──
+#!/usr/bin/env python3
+"""KC VENDETTA BOUNCE — Kash Crown signature music visualizer.
+
+Renders one song into:
+  1. {TITLE}_Youtube_Bars_HD.mp4  16:9 1280x720 @24fps, full song length
+  2. {TITLE}_TikTok_63s.mp4       9:16 720x1280 @24fps, loudest 63s section
+  3. {TITLE}_Thumbnail.png        16:9 still from the loudest moment
+
+Look: black + slow red/gold smoke + embers, distressed cracked gold title,
+gold tagline, 48 beat-reactive bars (orange -> yellow -> cyan) on a 70% black strip.
+
+Requires: Python 3.9+, numpy, Pillow 9.1+, and ffmpeg (on PATH, or `pip install imageio-ffmpeg`).
+"""
+from __future__ import annotations
+
+import argparse
+import math
+import re
+import shutil
+# subprocess only runs the resolved ffmpeg binary with a fixed argv list (no shell).
+import subprocess  # nosec B404
+import sys
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+try:
+    import numpy as np
+    from PIL import Image
+except ImportError as exc:  # pragma: no cover
+    sys.exit(f"Missing dependency: {exc.name}. Run: pip install numpy pillow imageio-ffmpeg")
+
+from kcvb_audio import analyze, decode_mono, loudest_window
+from kcvb_scene import Scene
+from kcvb_style import ANALYSIS_SR, DEFAULT_FONT, FPS, TIKTOK_SECONDS, Canvas, Text
+
+JUNK_WORDS = (r"(final|master(ed)?|mix(down)?|v\d+|wav|mp3|export|bounce|prod|clean|dirty"
+              r"|explicit|\d{2,3}\s?bpm)")
+
+
+def find_ffmpeg() -> str:
+    """Absolute path of a real ffmpeg binary (system first, then imageio-ffmpeg)."""
+    exe = shutil.which("ffmpeg")
+    if not exe:
+        try:
+            import imageio_ffmpeg  # pylint: disable=import-outside-toplevel
+            exe = imageio_ffmpeg.get_ffmpeg_exe()
+        except (ImportError, RuntimeError):
+            exe = None
+    if not exe or not Path(exe).is_file():
+        sys.exit("ffmpeg not found. Install ffmpeg or run: pip install imageio-ffmpeg")
+    return str(Path(exe).resolve())
+
+
+def parse_time(value: str | None) -> float | None:
+    """'75', '75.5' or '1:15' -> seconds."""
+    if value is None:
+        return None
+    if ":" in value:
+        minutes, seconds = value.split(":", 1)
+        return int(minutes) * 60 + float(seconds)
+    return float(value)
+
+
+def title_from_filename(path: Path) -> str:
+    """'Vendetta_Soul_(FINAL MASTER).wav' -> 'VENDETTA SOUL'."""
+    name = path.stem
+    name = re.sub(r"[\[(].*?[\])]", " ", name)
+    name = re.sub(r"[_\-.]+", " ", name)
+    name = re.sub(rf"\b{JUNK_WORDS}\b", " ", name, flags=re.I)
+    name = re.sub(r"\s+", " ", name).strip()
+    return (name or path.stem).upper()
+
+
+def safe_filename(title: str) -> str:
+    """Title -> file-name stem using only [A-Za-z0-9_]."""
+    stem = re.sub(r"[^A-Za-z0-9]+", "_", title).strip("_")
+    return stem or "SONG"
 
 # ── Encode ──────────────────────────────────────────────────────────────────
 @dataclass
