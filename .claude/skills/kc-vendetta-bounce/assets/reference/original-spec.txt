@@ -1,0 +1,47 @@
+
+SKILL NAME: KC VENDETTA BOUNCE
+SIGNATURE VISUAL FOR KASH CROWN
+
+DESCRIPTION:
+This is your permanent YouTube + TikTok visual style. Dark luxury streetwear look with animated smoke and beat-reactive bounce bars.
+
+VISUAL SPECS:
+- Background: Pure black with slow drifting red/gold smoke, ember particles floating, cinematic vignette, dark luxury
+- Main Title: Distressed cracked gold text, all caps, centered: "{SONG_TITLE}" (e.g. VENDETTA SOUL) - font: heavy gothic western, glowing red-orange outer glow
+- Subtitle: Smaller gold text below: "{TAGLINE}" (e.g. Me hard call Vendetta) - 20% size of main title
+- Bottom Bars: 48 vertical equalizer bars across full bottom, 200px tall, bouncing to bass. Colors gradient: left Orange 0xFF3300 -> Middle Yellow 0xFFFF00 -> Right Cyan 0x00FFFF. Bars have white highlight on top edge, black semi-transparent background behind bars (70% opacity)
+- Animation: Slow push-in zoom on background + smoke drifting, bars react fast attack (0.7) slow release (0.75) to boom with beat
+- No watermark, no ID text
+
+OUTPUTS (auto-generate both):
+1. FULL YOUTUBE VERSION:
+   - 16:9, 1280x720, 24fps
+   - Full song length (e.g. 3:26)
+   - File: {SONG_TITLE}_Youtube_Bars_HD.mp4
+
+2. TIKTOK MONETIZATION VERSION:
+   - 9:16 vertical, 720x1280, 24fps
+   - 1:03 long (63 seconds) - best energetic part auto-detected (loudest chorus section)
+   - Same visual but cropped vertical, bars at bottom still
+   - File: {SONG_TITLE}_TikTok_63s.mp4
+
+HOW TO USE:
+Just say: "Use KC VENDETTA BOUNCE for this song" + upload WAV/MP3
+I'll automatically:
+- Detect title from file name
+- Make full YouTube version
+- Make 1:03 TikTok version cut to the hardest part for monetization
+- Keep exact same look every time, just change the name
+
+EXAMPLE TRIGGER PHRASES:
+- "Use KC VENDETTA BOUNCE for this"
+- "Upload with my Vendetta Bounce look"
+- "Make it KC VENDETTA BOUNCE style"
+
+COLOR CODES:
+Bars: 0xFF3300|0xFF6600|0xFFAA00|0xFFDD00|0xFFFF00|0xAAFF00|0x00FFCC|0x00FFFF
+Background smoke: red-orange #FF3300 glow + gold #FFD700 text
+
+AUDIO REACTIVE SETTINGS:
+showfreqs=s=1280x200:mode=bar:ascale=log:fscale=log:win_size=1024:overlap=0.6
+
