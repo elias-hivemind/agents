@@ -143,3 +143,8 @@ dist
 .DS_Store
 # playwright mcp wrapper output
 .playwright-mcp/
+
+# Python bytecode
+__pycache__/
+*.pyc
+renders/
