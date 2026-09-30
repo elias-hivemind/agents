@@ -14,6 +14,7 @@ The look:
 - **Lyric line:** the current lyric, from the song's own timed lyrics, in Oswald Bold, gold and letter-spaced. Each new line rises in.
 - **Visualizer:** blocky amber spectrum bars across the bottom, driven by the actual audio.
 - **Beat response:** the glow, flare, title bounce and embers pulse on every beat and hit harder on every 4th beat. Choruses run hotter and bridges or drops calmer, based on the song's section markers.
+- **Follow call-to-action:** every video ends on a "FOLLOW KASH CROWN" card listing YouTube, Instagram, Facebook, Threads, Pinterest and X at `@kashcrown`, and TikTok at `@kashcrown0`. Songs of a minute or more also flash a short follow banner at the midpoint. In `landscape` and `square` the end card replaces the lyric line. In `vertical` it sits in the empty bar under the scene.
 
 ## Prerequisites
 
@@ -40,17 +41,21 @@ python3 $V song.m4a --format vertical --start 80 --duration 21.6 -o hook_reel.mp
 python3 $V song.mp3 --title "Empire of Scars" --srt lyrics.srt --format square -o sq.mp4
 ```
 
-| Flag                    | Default                    | Notes                                                           |
-| ----------------------- | -------------------------- | --------------------------------------------------------------- |
-| `--format`              | `vertical`                 | `vertical` 1080x1920, `landscape` 1920x1080, `square` 1080x1080 |
-| `--title`               | title tag or file name     | Upload prefixes like `552fda97-` are stripped                   |
-| `--srt`                 | the song's embedded lyrics | Suno `.m4a` exports carry timed lyrics as a subtitle track      |
-| `--no-lyrics`           | off                        | Title and visualizer only                                       |
-| `--start`, `--duration` | whole song                 | In seconds                                                      |
-| `--bpm`                 | detected                   | Use if the pulses feel doubled or halved                        |
-| `--brand`               | `Kash Crown`               | The small letter-spaced line above the title                    |
-| `--fade`                | `1.0`                      | Fade in and out, in seconds                                     |
-| `--workers`             | CPU count                  | Renders in parallel chunks, then joins them and adds the music  |
+| Flag                    | Default                    | Notes                                                                    |
+| ----------------------- | -------------------------- | ------------------------------------------------------------------------ |
+| `--format`              | `vertical`                 | `vertical` 1080x1920, `landscape` 1920x1080, `square` 1080x1080          |
+| `--title`               | title tag or file name     | Upload prefixes like `552fda97-` are stripped                            |
+| `--srt`                 | the song's embedded lyrics | Suno `.m4a` exports carry timed lyrics as a subtitle track               |
+| `--no-lyrics`           | off                        | Title and visualizer only                                                |
+| `--start`, `--duration` | whole song                 | In seconds                                                               |
+| `--bpm`                 | detected                   | Use if the pulses feel doubled or halved                                 |
+| `--brand`               | `Kash Crown`               | The small letter-spaced line above the title                             |
+| `--handle`              | `kashcrown`                | Follow handle for YouTube, Instagram, Facebook, Threads, Pinterest and X |
+| `--tiktok`              | `kashcrown0`               | TikTok handle (it ends in a zero)                                        |
+| `--cta-seconds`         | `8`                        | End-card length, capped at 20% of the video                              |
+| `--no-cta`              | off                        | No end card and no mid-song banner                                       |
+| `--fade`                | `1.0`                      | Fade in and out, in seconds                                              |
+| `--workers`             | CPU count                  | Renders in parallel chunks, then joins them and adds the music           |
 
 ## Workflow
 
@@ -61,6 +66,9 @@ python3 $V song.mp3 --title "Empire of Scars" --srt lyrics.srt --format square -
 5. Send the file. For posting, hand off to `stitch-reel` (Instagram and Pinterest through Zapier). For YouTube, the user uploads it.
 
 ## Notes
+
+- Handles are shown in lowercase, so the zero in `@kashcrown0` can't be misread as the letter O.
+- For YouTube uploads, also put the follow handles at the top of the description.
 
 - Lines under 0.3 s are dropped. In Suno exports these are ad-libs and section tags stacked on one timestamp.
 - Section energy: intro 0.75, verse 1.0, pre-chorus 1.1, chorus/hook 1.3, full energy 1.45, bridge 0.7, drop 0.6, outro 0.7.

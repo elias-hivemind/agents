@@ -19,6 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from vb_art import build_title, ease_out_back, fit_text, oswald, paste_rgba, text_img  # noqa: E402
+from vb_cta import Cta, CtaArt  # noqa: E402
 from vb_lyrics import energy_at, load_lyrics, song_title  # noqa: E402
 from vb_scene import (LAYOUTS, Embers, background, draw_spectrum, flare,  # noqa: E402
                       smoke_at, smoke_field, spectrum)
@@ -87,6 +88,7 @@ class Job:
     sections: list
     brand: str
     fade: float = 1.0
+    cta: Optional[Cta] = None
     frames: range = field(default_factory=lambda: range(0))
 
 
@@ -113,6 +115,8 @@ class Scene:
                               (214, 170, 90, 200), 2, False)
         self.spec = spectrum(job.music, job.start, job.duration, FPS)
         self.subs = {}
+        title_bottom = lay.band_y + int(self.tcy + self.title.height * 0.5)
+        self.cta = CtaArt(job.cta, lay, title_bottom, job.duration) if job.cta else None
 
     def subtitle(self, text: str):
         if text not in self.subs:
@@ -132,6 +136,9 @@ class Scene:
         return band
 
     def _lyrics(self, band: np.ndarray, t: float, pulse: float) -> None:
+        hold = self.cta.lyric_alpha(t) if self.cta else 1.0
+        if hold <= 0:
+            return
         for s, e, text in self.job.lines:
             if not s - self.job.start - 0.15 <= t < e - self.job.start + 0.1:
                 continue
@@ -141,7 +148,7 @@ class Scene:
             fade = min(1.0, max(0.0, p)) * (1.0 if t < e - 0.05 else max(0.0, (e + 0.1 - t) / 0.15))
             rise = int((1 - ease_out_back(min(p, 1.0))) * 26 * self.lay.scale)
             y = int(self.tcy + self.title.height * 0.62) + rise - int(3 * pulse)
-            paste_rgba(band, img, self.lay.width // 2 - img.width // 2, y, fade)
+            paste_rgba(band, img, self.lay.width // 2 - img.width // 2, y, fade * hold)
 
     def frame(self, fi: int) -> np.ndarray:
         job, lay = self.job, self.lay
@@ -162,6 +169,8 @@ class Scene:
         draw_spectrum(band, self.spec[min(fi, len(self.spec) - 1)] * intro, int(lay.spec_h))
         out = np.zeros((lay.height, lay.width, 3), np.float32)
         out[lay.band_y:lay.band_y + lay.band_h] = np.clip(band, 0, 1)
+        if self.cta:
+            self.cta.draw(out, t)
         edge = min(1.0, t / job.fade, (job.duration - t) / job.fade) if job.fade > 0 else 1.0
         return out * max(0.0, edge)
 
@@ -237,8 +246,9 @@ def build_job(a) -> Job:
     beats = find_beats(a.music, start, duration + 1, a.bpm)
     print(f"'{title}': {duration:.1f}s, {len(lines)} lyric lines, {len(sections)} sections",
           file=sys.stderr)
+    cta = None if a.no_cta else Cta(a.brand, a.handle, a.tiktok, a.cta_seconds)
     return Job(a.music, title, start, duration, a.format, beats, lines, sections, a.brand,
-               fade=a.fade)
+               fade=a.fade, cta=cta)
 
 
 def main(argv=None) -> int:
@@ -254,6 +264,10 @@ def main(argv=None) -> int:
     p.add_argument("--duration", type=float, help="seconds (default: to the end)")
     p.add_argument("--bpm", type=float, help="override detected tempo")
     p.add_argument("--brand", default="Kash Crown")
+    p.add_argument("--handle", default="kashcrown", help="follow handle on YouTube/IG/FB/Threads/Pinterest/X")
+    p.add_argument("--tiktok", default="kashcrown0", help="TikTok handle")
+    p.add_argument("--cta-seconds", type=float, default=8.0, help="end-card length (max 20%% of the video)")
+    p.add_argument("--no-cta", action="store_true", help="no follow end card or mid-song banner")
     p.add_argument("--fade", type=float, default=1.0, help="fade in/out seconds")
     p.add_argument("--workers", type=int, default=os.cpu_count() or 2)
     a = p.parse_args(argv)

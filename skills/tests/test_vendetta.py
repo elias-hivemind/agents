@@ -65,6 +65,37 @@ class LyricsTest(unittest.TestCase):
 
 
 @unittest.skipUnless(HAS_RENDER, "numpy/Pillow/ffmpeg not installed")
+class CtaTest(unittest.TestCase):
+    def setUp(self):
+        import vb_cta  # noqa: PLC0415
+        import vb_scene  # noqa: PLC0415
+        self.cta, self.layouts = vb_cta, vb_scene.LAYOUTS
+
+    def test_handles_are_lowercase_with_at(self):
+        self.assertEqual(self.cta.at("KashCrown0"), "@kashcrown0")
+        self.assertEqual(self.cta.at("@kashcrown"), "@kashcrown")
+
+    def test_vertical_uses_letterbox_bar_and_keeps_lyrics(self):
+        lay = self.layouts["vertical"]
+        art = self.cta.CtaArt(self.cta.Cta(), lay, 500, 120.0)
+        self.assertGreaterEqual(art.y0, lay.band_y + lay.band_h)
+        self.assertLessEqual(art.card.height, art.y1 - art.y0)
+        self.assertEqual(art.lyric_alpha(119.0), 1.0)
+
+    def test_landscape_end_card_replaces_lyrics_at_the_end(self):
+        art = self.cta.CtaArt(self.cta.Cta(end_len=8), self.layouts["landscape"], 650, 200.0)
+        self.assertEqual(art.end_start, 192.0)
+        self.assertEqual(art.lyric_alpha(100.0), 1.0)
+        self.assertEqual(art.lyric_alpha(195.0), 0.0)
+        self.assertEqual(art.mid_start, 90.0)
+
+    def test_short_clip_caps_end_card_and_skips_banner(self):
+        art = self.cta.CtaArt(self.cta.Cta(end_len=8), self.layouts["square"], 650, 20.0)
+        self.assertAlmostEqual(art.end_start, 16.0)
+        self.assertIsNone(art.mid_start)
+
+
+@unittest.skipUnless(HAS_RENDER, "numpy/Pillow/ffmpeg not installed")
 class RenderTest(unittest.TestCase):
     def test_short_square_render(self):
         import vendetta  # noqa: PLC0415
