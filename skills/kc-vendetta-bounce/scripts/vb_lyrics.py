@@ -11,10 +11,13 @@ from typing import List, Optional, Tuple
 Line = Tuple[float, float, str]
 
 SECTION_RE = re.compile(r"^\[(?P<name>[^\]]+)\]$")
+# some exports write section labels on their own line without brackets ("Hook", "Verse 2")
+BARE_SECTION_RE = re.compile(r"^(?P<name>(?:intro|outro|hook|chorus|refrain|bridge|drop|interlude|breakdown|verse"
+                             r"|(?:pre|post)-?(?:hook|chorus)|final (?:hook|chorus))(?: \d+)?)$", re.I)
 # visual energy per song section (multiplies glow, bounce and embers)
-ENERGY = {"intro": 0.75, "verse": 1.0, "pre-chorus": 1.1, "hook": 1.3, "chorus": 1.3,
-          "final hook": 1.4, "full energy": 1.45, "bridge": 0.7, "drop": 0.6, "outro": 0.7,
-          "fade out": 0.5}
+ENERGY = {"intro": 0.75, "verse": 1.0, "pre-chorus": 1.1, "pre-hook": 1.1, "hook": 1.3, "chorus": 1.3,
+          "final hook": 1.4, "final chorus": 1.4, "full energy": 1.45, "bridge": 0.7, "drop": 0.6,
+          "outro": 0.7, "fade out": 0.5}
 
 
 def _ts(stamp: str) -> float:
@@ -33,7 +36,7 @@ def parse_srt(text: str) -> Tuple[List[Line], List[Line]]:
             continue
         a, b = (_ts(x) for x in rows[1].split("-->"))
         body = " ".join(rows[2:]).strip()
-        m = SECTION_RE.match(body)
+        m = SECTION_RE.match(body) or BARE_SECTION_RE.match(body)
         if m:
             sections.append((a, b, m.group("name").strip().lower()))
         elif b - a >= 0.3:
@@ -62,7 +65,7 @@ def energy_at(sections: List[Line], t: float) -> float:
     for start, _, name in sections:
         if start > t:
             break
-        level = ENERGY.get(name, level)
+        level = ENERGY.get(re.sub(r"\s*\d+$", "", name), level)
     return level
 
 

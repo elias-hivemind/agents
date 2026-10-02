@@ -51,6 +51,21 @@ class LyricsTest(unittest.TestCase):
                           "Built an empire out of every scar I hold"])
         self.assertEqual([n for _, _, n in sections], ["intro", "chorus"])
 
+    def test_bare_section_labels_are_sections_not_lyrics(self):
+        srt = ("1\n00:00:00,000 --> 00:00:02,154\nIntro\n\n"
+               "2\n00:00:02,200 --> 00:00:06,000\nMidnight on the glass, city breathing slow\n\n"
+               "3\n00:01:19,947 --> 00:01:20,106\nHook\n\n"
+               "4\n00:01:41,250 --> 00:01:41,330\nVerse 2\n\n"
+               "5\n00:03:23,138 --> 00:03:23,457\nFinal Hook\n\n"
+               "6\n00:03:24,000 --> 00:03:27,000\nThis is my empire of scars\n")
+        lines, sections = vb_lyrics.parse_srt(srt)
+        self.assertEqual([t for _, _, t in lines],
+                         ["Midnight on the glass, city breathing slow", "This is my empire of scars"])
+        self.assertEqual([n for _, _, n in sections], ["intro", "hook", "verse 2", "final hook"])
+        self.assertEqual(vb_lyrics.energy_at(sections, 90.0), 1.3)
+        self.assertEqual(vb_lyrics.energy_at(sections, 110.0), 1.0)
+        self.assertEqual(vb_lyrics.energy_at(sections, 210.0), 1.4)
+
     def test_energy_follows_sections(self):
         _, sections = vb_lyrics.parse_srt(SRT)
         self.assertEqual(vb_lyrics.energy_at(sections, 1.0), 1.0)
