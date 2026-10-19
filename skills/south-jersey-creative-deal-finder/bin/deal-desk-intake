@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+# Launcher so the intake runs from any directory: symlink it onto PATH or add this bin/ folder to PATH.
+SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
+DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
+exec python3 "$DIR/scripts/deal_desk_intake.py" "$@"
