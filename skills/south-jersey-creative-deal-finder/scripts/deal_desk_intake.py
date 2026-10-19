@@ -106,46 +106,57 @@ _RECENCY_RE = re.compile(r"(?:last (?:seen|reported|updated)|reported|seen)\s*:?
 _RELATIVE_RE = re.compile(r"(?:relatives?|associates?|spouse|co-?owners?|heirs?)\s*:\s*(.+)", re.I)
 
 
+_KIND_ALIASES = {"cell": "wireless", "mobile": "wireless", "land line": "landline"}
+
+
+def _group(match: Optional[re.Match]) -> Optional[str]:
+    return match.group(1) if match else None
+
+
+def _phones_in_line(line: str, seen: set) -> List[Dict[str, Optional[str]]]:
+    """Phones on one line, tagged with the type/carrier/recency found on that line."""
+    kind = (_group(_TYPE_RE.search(line)) or "").lower()
+    found = []
+    for a, b, c in _PHONE_RE.findall(line):
+        num = f"({a}) {b}-{c}"
+        if num not in seen:
+            seen.add(num)
+            found.append({"number": num, "type": _KIND_ALIASES.get(kind, kind) or None,
+                          "carrier": _group(_CARRIER_RE.search(line)),
+                          "recency": _group(_RECENCY_RE.search(line))})
+    return found
+
+
+def _is_person_name(name: str) -> bool:
+    return bool(name) and "@" not in name and not _PHONE_RE.search(name)
+
+
+def _related_people(text: str) -> List[str]:
+    related: List[str] = []
+    for m in _RELATIVE_RE.finditer(text):
+        for name in re.split(r"[;,]| and ", m.group(1)):
+            name = name.strip(" .")
+            if _is_person_name(name) and name not in related:
+                related.append(name)
+    return related
+
+
 def parse_skip_trace(text: str) -> Dict[str, Any]:
     """Extract CANDIDATE contacts from pasted skip-trace / people-search text.
 
     Results are unverified: confirm the person matches the owner and the property or mailing
     address, and scrub phones against the National Do Not Call Registry before calling/texting.
     """
-    phones: List[Dict[str, Optional[str]]] = []
-    seen = set()
-    for line in (text or "").splitlines():
-        for a, b, c in _PHONE_RE.findall(line):
-            num = f"({a}) {b}-{c}"
-            if num in seen:
-                continue
-            seen.add(num)
-            ptype = _TYPE_RE.search(line)
-            carrier = _CARRIER_RE.search(line)
-            recency = _RECENCY_RE.search(line)
-            kind = ptype.group(1).lower() if ptype else None
-            if kind in ("cell", "mobile"):
-                kind = "wireless"
-            if kind == "land line":
-                kind = "landline"
-            phones.append({"number": num, "type": kind,
-                           "carrier": carrier.group(1) if carrier else None,
-                           "recency": recency.group(1) if recency else None})
-    # wireless first, keep source order otherwise
-    phones.sort(key=lambda p: 0 if p["type"] == "wireless" else 1)
-    emails = list(dict.fromkeys(e.lower() for e in _EMAIL_RE.findall(text or "")))
-    related: List[str] = []
-    for m in _RELATIVE_RE.finditer(text or ""):
-        for name in re.split(r"[;,]| and ", m.group(1)):
-            name = name.strip(" .")
-            if name and name not in related and not _PHONE_RE.search(name) and "@" not in name:
-                related.append(name)
+    text = text or ""
+    seen: set = set()
+    phones = [ph for line in text.splitlines() for ph in _phones_in_line(line, seen)]
+    phones.sort(key=lambda ph: 0 if ph["type"] == "wireless" else 1)  # wireless first, stable otherwise
     return {
         "primary_phone": phones[0]["number"] if phones else None,
         "phones": phones,
-        "secondary_phones": [p["number"] for p in phones[1:]],
-        "emails": emails,
-        "related_people": related,
+        "secondary_phones": [ph["number"] for ph in phones[1:]],
+        "emails": list(dict.fromkeys(e.lower() for e in _EMAIL_RE.findall(text))),
+        "related_people": _related_people(text),
         "verified": False,
         "dnc_checked": False,
     }
@@ -163,7 +174,7 @@ def _num(v: Any) -> Optional[float]:
 
 
 def assess_assumable(loan_type: Optional[str], rate: Optional[float], fixed: bool) -> Optional[bool]:
-    """True for a fixed FHA/VA/USDA loan at <= 3.0%; None when loan type or rate is unknown."""
+    """Return True for a fixed FHA/VA/USDA loan at <= 3.0%, None when type or rate is unknown."""
     if not loan_type or rate is None:
         return None
     return loan_type.upper() in ASSUMABLE_LOANS and fixed and rate <= ASSUMABLE_RATE_MAX
@@ -180,14 +191,14 @@ def equity_gap_plan(price: Optional[float], balance: Optional[float]) -> Optiona
 
 
 def is_absentee(property_address: str, mailing: Optional[str]) -> Optional[bool]:
-    """True when the owner mailing address differs from the property; None if unknown."""
+    """Return True when the owner mails elsewhere, None when the mailing address is unknown."""
     if not mailing:
         return None
     return normalize_street(property_address) != normalize_street(mailing)
 
 
 def add_business_days(start: date, days: int) -> date:
-    """Date `days` weekdays after `start` (holidays not skipped)."""
+    """Return the date `days` weekdays after `start` (holidays are not skipped)."""
     d = start
     while days > 0:
         d += timedelta(days=1)
@@ -216,61 +227,121 @@ def _heading(text: str) -> dict:
     return {"object": "block", "type": "heading_3", "heading_3": {"rich_text": _rt(text)}}
 
 
+# (Notion property, deal key, Notion type), in the order the card shows them
+_PROPERTY_MAP = [
+    ("Town", "town", "rich_text"), ("Owner name", "owner_name", "rich_text"),
+    ("Owner mailing address", "mailing_address", "rich_text"), ("Block / lot", "block_lot", "rich_text"),
+    ("Property class", "property_class", "rich_text"), ("Last sale", "last_sale", "rich_text"),
+    ("Beds / baths / sq ft", "specs", "rich_text"), ("Loan type / rate", "loan_summary", "rich_text"),
+    ("Contact person", "contact_person", "rich_text"), ("Next action", "next_action", "rich_text"),
+    ("Notes", "notes_property", "rich_text"),
+    ("Assessed value", "assessed_value", "number"), ("Annual taxes", "annual_taxes", "number"),
+    ("ARV", "arv", "number"), ("Asking price", "asking_price", "number"), ("Equity gap", "equity_gap", "number"),
+    ("Strategy", "strategy", "select"), ("Stage", "stage", "select"), ("Call", "call", "select"),
+    ("Confidence", "confidence", "select"), ("Lead source", "lead_source", "select"),
+    ("Attorney first", "attorney_first", "checkbox"), ("Absentee owner", "absentee", "checkbox"),
+    ("Owner phone", "owner_phone", "phone_number"), ("Owner email", "owner_email", "email"),
+    ("Next action date", "next_action_date", "date"),
+]
+_KEEP_FALSY = {"number", "checkbox"}  # 0 and False are real values for these types
+
+
+def _prop_value(kind: str, value: Any) -> Dict[str, Any]:
+    if kind == "rich_text":
+        return {"rich_text": _rt(str(value))}
+    if kind == "select":
+        return {"select": {"name": value}}
+    if kind == "date":
+        return {"date": {"start": value}}
+    if kind == "checkbox":
+        return {"checkbox": bool(value)}
+    return {kind: value}  # number, phone_number, email
+
+
 def build_properties(deal: Dict[str, Any]) -> Dict[str, Any]:
-    """Map deal fields to Deals Pipeline property names/types. Missing values are omitted, so an
-    update never blanks a field that already has data."""
+    """Map deal fields to Deals Pipeline property names and types.
+
+    Missing values are omitted, so an update never blanks a field that already has data.
+    """
     p: Dict[str, Any] = {"Address": {"title": _rt(deal["address"])}}
-
-    def text(name: str, key: str) -> None:
-        if deal.get(key):
-            p[name] = {"rich_text": _rt(str(deal[key]))}
-
-    def number(name: str, key: str) -> None:
-        if deal.get(key) is not None:
-            p[name] = {"number": deal[key]}
-
-    def select(name: str, key: str) -> None:
-        if deal.get(key):
-            p[name] = {"select": {"name": deal[key]}}
-
-    def checkbox(name: str, key: str) -> None:
-        if deal.get(key) is not None:
-            p[name] = {"checkbox": bool(deal[key])}
-
-    text("Town", "town")
-    text("Owner name", "owner_name")
-    text("Owner mailing address", "mailing_address")
-    text("Block / lot", "block_lot")
-    text("Property class", "property_class")
-    text("Last sale", "last_sale")
-    text("Beds / baths / sq ft", "specs")
-    text("Loan type / rate", "loan_summary")
-    text("Contact person", "contact_person")
-    text("Next action", "next_action")
-    text("Notes", "notes_property")
-    number("Assessed value", "assessed_value")
-    number("Annual taxes", "annual_taxes")
-    number("ARV", "arv")
-    number("Asking price", "asking_price")
-    number("Equity gap", "equity_gap")
-    select("Strategy", "strategy")
-    select("Stage", "stage")
-    select("Call", "call")
-    select("Confidence", "confidence")
-    select("Lead source", "lead_source")
-    checkbox("Attorney first", "attorney_first")
-    checkbox("Absentee owner", "absentee")
-    if deal.get("owner_phone"):
-        p["Owner phone"] = {"phone_number": deal["owner_phone"]}
-    if deal.get("owner_email"):
-        p["Owner email"] = {"email": deal["owner_email"]}
-    if deal.get("next_action_date"):
-        p["Next action date"] = {"date": {"start": deal["next_action_date"]}}
+    for name, key, kind in _PROPERTY_MAP:
+        value = deal.get(key)
+        if value is not None and (value or kind in _KEEP_FALSY):
+            p[name] = _prop_value(kind, value)
     return p
 
 
+_STAGE1_FIELDS = [("County", "county"), ("Municipality", "town"), ("APN / parcel ID", "apn"),
+                  ("Block / lot", "block_lot"), ("Owner of record", "owner_name"),
+                  ("Property class", "property_class"), ("Assessed value", "assessed_value"),
+                  ("Net annual taxes", "annual_taxes"), ("Last sale", "last_sale"),
+                  ("Owner mailing address", "mailing_address")]
+_STAGE3_FIELDS = [("Specs", "specs"), ("Asking price", "asking_price"), ("Estimated value", "est_value"),
+                  ("ARV (from renovated sold comps)", "arv"), ("Comps", "comps"), ("Loan", "loan_summary")]
+_ASSUMABLE_TEXT = {True: "YES - live-in candidate (servicer must confirm)", False: "no"}
+_PITCH = ("Hi {owner}, my name is [Your name]. I'm a local buyer and I'm interested in {address}. "
+          "If you've thought about selling, I can buy it as-is and work around your timeline. I'd put a "
+          "written offer in front of you that you can review with an attorney or anyone you trust. No "
+          "obligation. If you'd rather not hear from me, just tell me and I won't contact you again. "
+          "[Your phone / email]")
+
+
+def _fact_bullets(deal: Dict[str, Any], fields: List[Tuple[str, str]]) -> List[dict]:
+    return [_bullet(f"{label}: {'Not found' if deal.get(key) in (None, '') else deal[key]}")
+            for label, key in fields]
+
+
+def _stage1_blocks(deal: Dict[str, Any]) -> List[dict]:
+    blocks = [_heading("Stage 1 - Tax & parcel record")] + _fact_bullets(deal, _STAGE1_FIELDS)
+    if deal.get("absentee") is not None:
+        where = " (out of state)" if deal.get("out_of_state") else ""
+        blocks.append(_bullet(f"Absentee owner: {'yes' if deal['absentee'] else 'no'}{where}"))
+    return blocks
+
+
+def _phone_line(ph: Dict[str, Optional[str]]) -> str:
+    recency = f"last seen {ph['recency']}" if ph["recency"] else None
+    extra = ", ".join(x for x in [ph["type"], ph["carrier"], recency] if x)
+    return f"{ph['number']} - {extra}" if extra else str(ph["number"])
+
+
+def _stage2_blocks(contacts: Dict[str, Any]) -> List[dict]:
+    phones = [_bullet(_phone_line(ph)) for ph in contacts["phones"]] or [
+        _bullet("Phones: Not found - paste skip-trace / people-search text with --skip-text")]
+    return [_heading("Stage 2 - Contacts (UNVERIFIED, DNC not checked)")] + phones + [
+        _bullet(f"Emails: {', '.join(contacts['emails']) or 'Not found'}"),
+        _bullet(f"Co-owners / spouses / heirs / relatives listed: "
+                f"{', '.join(contacts['related_people']) or 'none listed'}"),
+        _para("Confirm each person matches the owner and the property or mailing address, "
+              "and scrub phones against the National Do Not Call Registry before any call or text.")]
+
+
+def _gap_text(plan: Optional[Dict[str, float]]) -> str:
+    if not plan:
+        return "Equity gap: unknown - need price and loan balance"
+    return (f"Equity gap ${plan['equity_gap']:,.0f}: proposed ${plan['cash']:,.0f} cash + "
+            f"${plan['seller_carryback_2nd']:,.0f} seller carryback 2nd note "
+            f"(0%-low interest). Proposal only: servicer approval + attorney-drafted note.")
+
+
+def _stage3_blocks(deal: Dict[str, Any]) -> List[dict]:
+    assumable = _ASSUMABLE_TEXT.get(deal.get("assumable_ok"), "unknown - need loan type, rate, fixed/ARM")
+    return [_heading("Stage 3 - Value & debt sizing")] + _fact_bullets(deal, _STAGE3_FIELDS) + [
+        _bullet("Assumable <=3.0% fixed FHA/VA/USDA: " + assumable),
+        _bullet(_gap_text(deal.get("gap_plan")))]
+
+
+def _pitch_blocks(deal: Dict[str, Any]) -> List[dict]:
+    heading = _heading("Owner pitch script")
+    if deal.get("attorney_first"):
+        return [heading, _para("Pitch on hold - attorney review required before any owner contact.")]
+    owner = deal.get("owner_name") or "[Owner name]"
+    return [heading, _para(_PITCH.format(owner=owner, address=deal["address"])),
+            _para("Mail first. Call or text only numbers that passed a DNC scrub.")]
+
+
 def build_dossier(deal: Dict[str, Any], contacts: Dict[str, Any], missing: List[str]) -> List[dict]:
-    """Page blocks for one intake run: warning, stage 1-3 findings, missing list, pitch script."""
+    """Build the page blocks for one intake run: warning, stages 1-3, missing list, pitch."""
     blocks: List[dict] = []
     if deal.get("attorney_first"):
         blocks.append({"object": "block", "type": "callout", "callout": {
@@ -279,73 +350,15 @@ def build_dossier(deal: Dict[str, Any], contacts: Dict[str, Any], missing: List[
     blocks.append(_heading(f"Intake dossier {deal['run_date']} (run {deal['run_hash']})"))
     blocks.append(_para(f"Operator: {deal.get('operator') or 'not set'}. Strategy {deal.get('strategy')}, "
                         f"stage {deal.get('stage')}, call {deal.get('call')}, confidence {deal.get('confidence')}."))
-
-    blocks.append(_heading("Stage 1 - Tax & parcel record"))
-    for label, key in [("County", "county"), ("Municipality", "town"), ("APN / parcel ID", "apn"),
-                       ("Block / lot", "block_lot"), ("Owner of record", "owner_name"),
-                       ("Property class", "property_class"), ("Assessed value", "assessed_value"),
-                       ("Net annual taxes", "annual_taxes"), ("Last sale", "last_sale"),
-                       ("Owner mailing address", "mailing_address")]:
-        blocks.append(_bullet(f"{label}: {deal[key] if deal.get(key) not in (None, '') else 'Not found'}"))
-    if deal.get("absentee") is not None:
-        blocks.append(_bullet(f"Absentee owner: {'yes' if deal['absentee'] else 'no'}"
-                              f"{' (out of state)' if deal.get('out_of_state') else ''}"))
-
-    blocks.append(_heading("Stage 2 - Contacts (UNVERIFIED, DNC not checked)"))
-    if contacts["phones"]:
-        for ph in contacts["phones"]:
-            extra = ", ".join(x for x in [ph["type"], ph["carrier"],
-                                          f"last seen {ph['recency']}" if ph["recency"] else None] if x)
-            blocks.append(_bullet(f"{ph['number']}{' - ' + extra if extra else ''}"))
-    else:
-        blocks.append(_bullet("Phones: Not found - paste skip-trace / people-search text with --skip-text"))
-    blocks.append(_bullet(f"Emails: {', '.join(contacts['emails']) or 'Not found'}"))
-    blocks.append(_bullet(f"Co-owners / spouses / heirs / relatives listed: "
-                          f"{', '.join(contacts['related_people']) or 'none listed'}"))
-    blocks.append(_para("Confirm each person matches the owner and the property or mailing address, "
-                        "and scrub phones against the National Do Not Call Registry before any call or text."))
-
-    blocks.append(_heading("Stage 3 - Value & debt sizing"))
-    for label, key in [("Specs", "specs"), ("Asking price", "asking_price"), ("Estimated value", "est_value"),
-                       ("ARV (from renovated sold comps)", "arv"), ("Comps", "comps"),
-                       ("Loan", "loan_summary")]:
-        blocks.append(_bullet(f"{label}: {deal[key] if deal.get(key) not in (None, '') else 'Not found'}"))
-    a = deal.get("assumable_ok")
-    blocks.append(_bullet("Assumable <=3.0% fixed FHA/VA/USDA: " +
-                          ("YES - live-in candidate (servicer must confirm)" if a else
-                           "no" if a is False else "unknown - need loan type, rate, fixed/ARM")))
-    plan = deal.get("gap_plan")
-    if plan:
-        blocks.append(_bullet(f"Equity gap ${plan['equity_gap']:,.0f}: proposed ${plan['cash']:,.0f} cash + "
-                              f"${plan['seller_carryback_2nd']:,.0f} seller carryback 2nd note "
-                              f"(0%-low interest). Proposal only: servicer approval + attorney-drafted note."))
-    else:
-        blocks.append(_bullet("Equity gap: unknown - need price and loan balance"))
-
-    blocks.append(_heading("Still missing"))
-    for m in missing or ["Nothing flagged"]:
-        blocks.append(_bullet(m))
+    blocks += _stage1_blocks(deal) + _stage2_blocks(contacts) + _stage3_blocks(deal)
+    blocks += [_heading("Still missing")] + [_bullet(m) for m in missing or ["Nothing flagged"]]
     if deal.get("notes"):
-        blocks.append(_heading("Notes"))
-        blocks.append(_para(deal["notes"]))
-
-    blocks.append(_heading("Owner pitch script"))
-    if deal.get("attorney_first"):
-        blocks.append(_para("Pitch on hold - attorney review required before any owner contact."))
-    else:
-        owner = deal.get("owner_name") or "[Owner name]"
-        blocks.append(_para(
-            f"Hi {owner}, my name is [Your name]. I'm a local buyer and I'm interested in "
-            f"{deal['address']}. If you've thought about selling, I can buy it as-is and work around your "
-            f"timeline. I'd put a written offer in front of you that you can review with an attorney or "
-            f"anyone you trust. No obligation. If you'd rather not hear from me, just tell me and I won't "
-            f"contact you again. [Your phone / email]"))
-        blocks.append(_para("Mail first. Call or text only numbers that passed a DNC scrub."))
-    return blocks
+        blocks += [_heading("Notes"), _para(deal["notes"])]
+    return blocks + _pitch_blocks(deal)
 
 
 def missing_fields(deal: Dict[str, Any]) -> List[str]:
-    """What the operator still has to research, with where to get each item."""
+    """List what the operator still has to research, with where to get each item."""
     checks = [
         ("owner_name", "Owner of record - pull from njparcels.com or the county/municipal tax assessor"),
         ("block_lot", "Block / lot - njparcels.com or municipal tax map"),
@@ -397,7 +410,7 @@ def _title_of(page: dict) -> str:
 
 
 def find_existing(address: str) -> Optional[str]:
-    """Exact match on normalized street among rows whose title contains house number + street word."""
+    """Return the page id whose normalized street matches exactly, among rows with the house number."""
     target = normalize_street(address)
     house = target.split()[0] if target else ""
     body = {"filter": {"property": "Address", "title": {"contains": house}}, "page_size": 100}
@@ -433,6 +446,30 @@ def _append(page_id: str, blocks: List[dict]) -> None:
         _request("PATCH", f"/blocks/{page_id}/children", {"children": blocks[i:i + 100]})
 
 
+def _page_notes(page_id: str) -> str:
+    page = _request("GET", f"/pages/{page_id}")
+    return "".join(t.get("plain_text", "")
+                   for t in page.get("properties", {}).get("Notes", {}).get("rich_text", []))
+
+
+def _update_existing(page_id: str, deal: Dict[str, Any], props: Dict[str, Any], blocks: List[dict]) -> str:
+    """Patch an existing row without clobbering it; append the dossier unless this run is already there."""
+    # Defaults fill new rows only; on an existing row they would overwrite real pipeline data.
+    for name in deal.get("defaulted", []):
+        props.pop(name, None)
+    old_notes = _page_notes(page_id)
+    marker = f"run {deal['run_hash']}"
+    if "Notes" in props and marker in old_notes:
+        props.pop("Notes")
+    elif "Notes" in props and old_notes:
+        props["Notes"] = {"rich_text": _rt(deal["notes_property"] + "\n" + old_notes)}
+    _request("PATCH", f"/pages/{page_id}", {"properties": props})
+    if marker in _existing_text(page_id):
+        return "unchanged (already appended)"
+    _append(page_id, blocks)
+    return "appended"
+
+
 def upsert_deal(deal: Dict[str, Any], contacts: Dict[str, Any], dry_run: bool = False) -> Dict[str, Any]:
     """Create the row, or update the matching one and append the dossier once per run hash."""
     props = build_properties(deal)
@@ -443,23 +480,8 @@ def upsert_deal(deal: Dict[str, Any], contacts: Dict[str, Any], dry_run: bool = 
 
     page_id = find_existing(deal["address"])
     if page_id:
-        # Defaults fill new rows only; on an existing row they would overwrite real pipeline data.
-        for name in deal.get("defaulted", []):
-            props.pop(name, None)
-        page = _request("GET", f"/pages/{page_id}")
-        old_notes = "".join(t.get("plain_text", "")
-                            for t in page.get("properties", {}).get("Notes", {}).get("rich_text", []))
-        if "Notes" in props:
-            if f"run {deal['run_hash']}" in old_notes:
-                props.pop("Notes")
-            elif old_notes:
-                props["Notes"] = {"rich_text": _rt(deal["notes_property"] + "\n" + old_notes)}
-        _request("PATCH", f"/pages/{page_id}", {"properties": props})
-        if f"run {deal['run_hash']}" in _existing_text(page_id):
-            return {"action": "updated", "page_id": page_id, "dossier": "unchanged (already appended)",
-                    "missing": missing}
-        _append(page_id, blocks)
-        return {"action": "updated", "page_id": page_id, "dossier": "appended", "missing": missing}
+        dossier = _update_existing(page_id, deal, props, blocks)
+        return {"action": "updated", "page_id": page_id, "dossier": dossier, "missing": missing}
 
     page = _request("POST", "/pages", {
         "parent": {"type": "data_source_id", "data_source_id": DATA_SOURCE_ID},
@@ -471,85 +493,112 @@ def upsert_deal(deal: Dict[str, Any], contacts: Dict[str, Any], dry_run: bool = 
 
 # ------------------------------------------------------------------ CLI
 
-def build_deal(args: argparse.Namespace) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """Merge flags over --facts, derive the computed fields, and validate select values."""
-    facts: Dict[str, Any] = {}
-    if args.facts:
-        with open(args.facts, encoding="utf-8") as fh:
-            facts = json.load(fh)
+NEXT_ACTION_DEFAULT = "Fill missing tax-record and contact fields; verify loan with seller/servicer."
+NEXT_ACTION_FORECLOSURE = "ATTORNEY FIRST: verify docket and get NJ attorney review before any owner contact."
 
-    defaulted: List[str] = []  # Notion property names filled from defaults, not from the operator
 
-    def pick(name: str, default: Any = None, prop: Optional[str] = None) -> Any:
-        v = getattr(args, name, None)
+class _Picker:
+    """Look a field up in the flags, then --facts, then the default.
+
+    Defaults that fill a Notion property are recorded in `defaulted`, so an update can skip them.
+    """
+
+    def __init__(self, args: argparse.Namespace, facts: Dict[str, Any]) -> None:
+        """Store the parsed flags and the --facts dict."""
+        self.args, self.facts = args, facts
+        self.defaulted: List[str] = []
+
+    def __call__(self, name: str, default: Any = None, prop: Optional[str] = None) -> Any:
+        """Return the first non-empty value for `name`."""
+        v = getattr(self.args, name, None)
         if v not in (None, ""):
             return v
-        if facts.get(name) not in (None, ""):
-            return facts[name]
+        if self.facts.get(name) not in (None, ""):
+            return self.facts[name]
         if prop and default is not None:
-            defaulted.append(prop)
+            self.defaulted.append(prop)
         return default
 
-    contacts = parse_skip_trace(pick("skip_text", "") or "")
-    rate = _num(pick("rate"))
-    loan_type = pick("loan_type")
-    fixed = str(pick("loan_fixed", "yes")).lower() not in ("no", "false", "arm", "0")
-    asking = _num(pick("asking"))
-    balance = _num(pick("loan_balance"))
-    plan = equity_gap_plan(asking, balance)
-    mailing = pick("mailing_address")
-    foreclosure = bool(args.foreclosure or facts.get("foreclosure"))
 
-    loan_bits = [b for b in [loan_type, f"{rate}%" if rate is not None else None,
-                             ("fixed" if fixed else "ARM") if loan_type else None,
-                             f"balance ${balance:,.0f}" if balance is not None else None,
-                             pick("loan_source")] if b]
-    operator = pick("operator") or os.getenv("DEAL_DESK_OPERATOR")
-    today = date.today()
-    deal: Dict[str, Any] = {
-        "address": args.address.strip(),
+def _load_facts(path: Optional[str]) -> Dict[str, Any]:
+    if not path:
+        return {}
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _record_fields(pick: _Picker, address: str) -> Dict[str, Any]:
+    """Stage 1: tax and parcel record."""
+    mailing = pick("mailing_address")
+    return {
         "town": pick("town"), "county": pick("county"), "apn": pick("apn"),
         "block_lot": pick("block_lot"), "owner_name": pick("owner_name"),
         "property_class": pick("property_class"), "assessed_value": _num(pick("assessed_value")),
         "annual_taxes": _num(pick("annual_taxes")), "last_sale": pick("last_sale"),
-        "mailing_address": mailing, "absentee": is_absentee(args.address, mailing),
+        "mailing_address": mailing, "absentee": is_absentee(address, mailing),
         "out_of_state": bool(mailing and not re.search(r"\b(NJ|New Jersey)\b", mailing, re.I)),
+    }
+
+
+def _loan_summary(loan_type: Optional[str], rate: Optional[float], fixed: bool,
+                  balance: Optional[float], source: Optional[str]) -> Optional[str]:
+    terms = ("fixed" if fixed else "ARM") if loan_type else None
+    bits = [loan_type, None if rate is None else f"{rate}%", terms,
+            None if balance is None else f"balance ${balance:,.0f}", source]
+    return ", ".join(b for b in bits if b) or None
+
+
+def _value_fields(pick: _Picker) -> Dict[str, Any]:
+    """Stage 3: value, loan, assumable check, and equity-gap plan."""
+    rate, loan_type = _num(pick("rate")), pick("loan_type")
+    fixed = str(pick("loan_fixed", "yes")).lower() not in ("no", "false", "arm", "0")
+    asking, balance = _num(pick("asking")), _num(pick("loan_balance"))
+    plan = equity_gap_plan(asking, balance)
+    return {
         "specs": pick("specs"), "asking_price": asking, "est_value": pick("est_value"),
         "arv": _num(pick("arv")), "comps": pick("comps"),
-        "loan_summary": ", ".join(loan_bits) or None,
+        "loan_summary": _loan_summary(loan_type, rate, fixed, balance, pick("loan_source")),
         "assumable_ok": assess_assumable(loan_type, rate, fixed),
         "gap_plan": plan, "equity_gap": plan["equity_gap"] if plan else None,
+    }
+
+
+def _pipeline_fields(pick: _Picker, foreclosure: bool, today: date) -> Dict[str, Any]:
+    """Pipeline selects and the next action; a foreclosure always reaches the card."""
+    fields = {
         "strategy": pick("strategy"), "stage": pick("stage", "2 Researching", "Stage"),
         "call": pick("call", "Undecided", "Call"), "confidence": pick("confidence", "Low", "Confidence"),
         "lead_source": pick("lead_source", "Auction / sheriff" if foreclosure else None, "Lead source"),
         # True or None: an intake never clears an Attorney first flag someone already set.
         "attorney_first": True if foreclosure else None,
-        "owner_phone": contacts["primary_phone"], "owner_email": (contacts["emails"] or [None])[0],
-        "operator": operator, "notes": pick("notes"),
-        "run_date": today.isoformat(),
     }
     days = int(pick("followup_days", 2, "Next action date"))
-    deal["next_action_date"] = add_business_days(today, days).isoformat()
-    deal["next_action"] = pick("next_action", (
-        "ATTORNEY FIRST: verify docket and get NJ attorney review before any owner contact."
-        if foreclosure else "Fill missing tax-record and contact fields; verify loan with seller/servicer."),
-        "Next action")
-    if foreclosure:  # a foreclosure flag must always reach the card, even on an existing row
-        for name in ("Next action", "Next action date"):
-            if name in defaulted:
-                defaulted.remove(name)
+    fields["next_action_date"] = add_business_days(today, days).isoformat()
+    fields["next_action"] = pick("next_action", NEXT_ACTION_FORECLOSURE if foreclosure else NEXT_ACTION_DEFAULT,
+                                 "Next action")
+    if foreclosure:
+        pick.defaulted[:] = [n for n in pick.defaulted if n not in ("Next action", "Next action date")]
+    return fields
+
+
+def _resolve_strategy(deal: Dict[str, Any], defaulted: List[str]) -> None:
     if deal["strategy"] is None:
         deal["strategy"] = "Assumable" if deal["assumable_ok"] else "Subject-To"
         if not deal["assumable_ok"]:
             defaulted.append("Strategy")
-    if deal["strategy"] not in STRATEGIES:
-        raise IntakeError(f"strategy must be one of {STRATEGIES}")
-    for key, allowed in [("stage", STAGES), ("call", CALLS), ("confidence", CONFIDENCE)]:
+
+
+def _validate(deal: Dict[str, Any]) -> None:
+    for key, allowed in [("strategy", STRATEGIES), ("stage", STAGES), ("call", CALLS),
+                         ("confidence", CONFIDENCE)]:
         if deal[key] not in allowed:
             raise IntakeError(f"{key} must be one of {allowed}")
     if deal["lead_source"] and deal["lead_source"] not in LEAD_SOURCES:
         raise IntakeError(f"lead_source must be one of {LEAD_SOURCES}")
 
+
+def _summary_notes(deal: Dict[str, Any], contacts: Dict[str, Any]) -> str:
+    operator = deal["operator"]
     summary = [f"[intake {deal['run_date']}{' by ' + operator if operator else ''}, run {{hash}}]"]
     if deal["assumable_ok"]:
         summary.append("Assumable <=3% - live-in candidate (unverified until servicer confirms).")
@@ -557,22 +606,44 @@ def build_deal(args: argparse.Namespace) -> Tuple[Dict[str, Any], Dict[str, Any]
         summary.append("Contacts from pasted skip-trace: UNVERIFIED, DNC not checked.")
     if deal["notes"]:
         summary.append(deal["notes"])
-    deal["notes_property"] = " ".join(summary)
-    if contacts["related_people"]:
-        deal["contact_person"] = "Listed related people (unverified): " + ", ".join(contacts["related_people"])
+    return " ".join(summary)
 
-    # Same facts -> same hash on any day, so a rerun never appends a duplicate dossier.
+
+def _run_hash(deal: Dict[str, Any], contacts: Dict[str, Any]) -> str:
+    """Hash the facts only, so a rerun with the same facts on any day never appends a second dossier."""
     volatile = ("run_date", "next_action_date", "notes_property")
     fingerprint = json.dumps({k: v for k, v in deal.items() if k not in volatile},
                              sort_keys=True, default=str) + json.dumps(contacts, sort_keys=True)
-    deal["run_hash"] = hashlib.sha256(fingerprint.encode()).hexdigest()[:10]
+    return hashlib.sha256(fingerprint.encode()).hexdigest()[:10]
+
+
+def build_deal(args: argparse.Namespace) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Merge flags over --facts, derive the computed fields, and validate select values."""
+    facts = _load_facts(args.facts)
+    pick = _Picker(args, facts)
+    contacts = parse_skip_trace(pick("skip_text", "") or "")
+    foreclosure = bool(args.foreclosure or facts.get("foreclosure"))
+    today = date.today()
+    deal: Dict[str, Any] = {"address": args.address.strip()}
+    deal.update(_record_fields(pick, args.address))
+    deal.update(_value_fields(pick))
+    deal.update({"owner_phone": contacts["primary_phone"], "owner_email": (contacts["emails"] or [None])[0],
+                 "operator": pick("operator") or os.getenv("DEAL_DESK_OPERATOR"), "notes": pick("notes"),
+                 "run_date": today.isoformat()})
+    deal.update(_pipeline_fields(pick, foreclosure, today))
+    _resolve_strategy(deal, pick.defaulted)
+    _validate(deal)
+    deal["notes_property"] = _summary_notes(deal, contacts)
+    if contacts["related_people"]:
+        deal["contact_person"] = "Listed related people (unverified): " + ", ".join(contacts["related_people"])
+    deal["run_hash"] = _run_hash(deal, contacts)
     deal["notes_property"] = deal["notes_property"].replace("{hash}", deal["run_hash"])
-    deal["defaulted"] = defaulted
+    deal["defaulted"] = pick.defaulted
     return deal, contacts
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
-    """CLI definition; --skip-file contents are appended to --skip-text."""
+    """Parse the CLI; --skip-file contents are appended to --skip-text."""
     ap = argparse.ArgumentParser(
         prog="deal-desk-intake",
         description="Add or update a South Jersey property in the Notion Deals Pipeline (idempotent).")
@@ -612,7 +683,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    """Entry point: prints the JSON result, returns 0 on success and 2 on IntakeError."""
+    """Run the CLI: print the JSON result, return 0 on success and 2 on IntakeError."""
     try:
         args = parse_args(argv)
         deal, contacts = build_deal(args)

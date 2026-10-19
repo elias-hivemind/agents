@@ -29,64 +29,83 @@ Relatives: Mary Owner, Peter Owner
 """
 
 
+def _pid(path):
+    return path.split("/")[2]
+
+
 class FakeNotion:
     """Just enough of the Notion API: data source query, page create/get/patch, block children."""
 
     def __init__(self, rows=None):
+        """Seed the fake with existing Deals Pipeline rows (titles only)."""
         self.pages = {}
         self.children = {}
         self.calls = []
         for i, title in enumerate(rows or []):
             self.pages[f"page-{i}"] = {"Address": {"title": [{"plain_text": title}]}}
             self.children[f"page-{i}"] = []
+        self.routes = [
+            ("POST", lambda p: p.endswith("/query"), self._query),
+            ("POST", lambda p: p == "/pages", self._create),
+            ("GET", lambda p: p.startswith("/pages/"), self._get_page),
+            ("PATCH", lambda p: p.startswith("/pages/"), self._patch_page),
+            ("GET", lambda p: "/children" in p, self._get_children),
+            ("PATCH", lambda p: "/children" in p, self._append_children),
+        ]
 
     def __call__(self, method, path, body=None):
+        """Stand in for deal_desk_intake._request: record the call and route it."""
         self.calls.append((method, path, body))
-        if method == "POST" and path.endswith("/query"):
-            needle = body["filter"]["title"]["contains"].lower()
-            hits = [{"id": pid, "properties": props} for pid, props in self.pages.items()
-                    if needle in props["Address"]["title"][0]["plain_text"].lower()]
-            return {"results": hits, "has_more": False}
-        if method == "POST" and path == "/pages":
-            pid = f"page-{len(self.pages)}"
-            props = json.loads(json.dumps(body["properties"]))
-            props["Address"]["title"][0]["plain_text"] = props["Address"]["title"][0]["text"]["content"]
-            self.pages[pid] = props
-            self.children[pid] = list(body["children"])
-            return {"id": pid, "url": f"https://notion.so/{pid}"}
-        if method == "GET" and path.startswith("/pages/"):
-            pid = path.split("/")[2]
-            props = self.pages[pid]
-            notes = props.get("Notes", {}).get("rich_text", [])
-            out = {k: v for k, v in props.items()}
-            out["Notes"] = {"rich_text": [{"plain_text": t.get("plain_text", t.get("text", {}).get("content", ""))}
-                                          for t in notes]}
-            return {"id": pid, "properties": out}
-        if method == "PATCH" and path.startswith("/pages/"):
-            pid = path.split("/")[2]
-            for k, v in body["properties"].items():
-                if k != "Address":
-                    self.pages[pid][k] = v
-            return {"id": pid}
-        if method == "GET" and "/children" in path:
-            pid = path.split("/")[2]
-            res = []
-            for b in self.children[pid]:
-                rt = b[b["type"]]["rich_text"]
-                res.append({"type": b["type"], b["type"]: {"rich_text": [
-                    {"plain_text": t["text"]["content"]} for t in rt]}})
-            return {"results": res, "has_more": False}
-        if method == "PATCH" and "/children" in path:
-            self.children[path.split("/")[2]].extend(body["children"])
-            return {}
+        for verb, matches, handler in self.routes:
+            if verb == method and matches(path):
+                return handler(path, body)
         raise AssertionError(f"unexpected call {method} {path}")
 
+    def _query(self, _path, body):
+        needle = body["filter"]["title"]["contains"].lower()
+        hits = [{"id": pid, "properties": props} for pid, props in self.pages.items()
+                if needle in props["Address"]["title"][0]["plain_text"].lower()]
+        return {"results": hits, "has_more": False}
+
+    def _create(self, _path, body):
+        pid = f"page-{len(self.pages)}"
+        props = json.loads(json.dumps(body["properties"]))
+        props["Address"]["title"][0]["plain_text"] = props["Address"]["title"][0]["text"]["content"]
+        self.pages[pid] = props
+        self.children[pid] = list(body["children"])
+        return {"id": pid, "url": f"https://notion.so/{pid}"}
+
+    def _get_page(self, path, _body):
+        pid = _pid(path)
+        out = dict(self.pages[pid])
+        notes = out.get("Notes", {}).get("rich_text", [])
+        out["Notes"] = {"rich_text": [{"plain_text": t.get("plain_text", t.get("text", {}).get("content", ""))}
+                                      for t in notes]}
+        return {"id": pid, "properties": out}
+
+    def _patch_page(self, path, body):
+        pid = _pid(path)
+        self.pages[pid].update({k: v for k, v in body["properties"].items() if k != "Address"})
+        return {"id": pid}
+
+    def _get_children(self, path, _body):
+        res = [{"type": b["type"], b["type"]: {"rich_text": [
+            {"plain_text": t["text"]["content"]} for t in b[b["type"]]["rich_text"]]}}
+            for b in self.children[_pid(path)]]
+        return {"results": res, "has_more": False}
+
+    def _append_children(self, path, body):
+        self.children[_pid(path)].extend(body["children"])
+        return {}
+
     def appended_dossiers(self, pid):
+        """Count how many intake dossiers were written to a page."""
         return sum(1 for b in self.children[pid] if b["type"] == "heading_3"
                    and b["heading_3"]["rich_text"][0]["text"]["content"].startswith("Intake dossier"))
 
 
 def run(argv, fake):
+    """Run one intake against the fake Notion and return (deal, result)."""
     with mock.patch.object(ddi, "_request", fake):
         args = ddi.parse_args(argv)
         deal, contacts = ddi.build_deal(args)
@@ -94,12 +113,16 @@ def run(argv, fake):
 
 
 class TestHelpers(unittest.TestCase):
+    """Pure helpers: addresses, skip-trace parsing, deal math."""
+
     def test_normalize_street(self):
+        """Street spellings normalize to the same dedupe key."""
         self.assertEqual(ddi.normalize_street("100 Example Road, Sewell NJ"), "100 example rd")
         self.assertEqual(ddi.normalize_street("321 N. Example Dr."), "321 n example dr")
         self.assertEqual(ddi.normalize_street("17 West Sample Avenue"), ddi.normalize_street("17 W Sample Ave"))
 
     def test_skip_trace(self):
+        """Phones, types, carriers, emails and relatives are parsed and marked unverified."""
         c = ddi.parse_skip_trace(SKIP)
         self.assertEqual(c["primary_phone"], "(856) 555-0101")
         self.assertEqual(c["phones"][0]["type"], "wireless")
@@ -112,6 +135,7 @@ class TestHelpers(unittest.TestCase):
         self.assertFalse(c["dnc_checked"])
 
     def test_assumable_and_gap(self):
+        """Assumable rule and the cash-plus-carryback equity gap split."""
         self.assertTrue(ddi.assess_assumable("fha", 2.75, True))
         self.assertFalse(ddi.assess_assumable("FHA", 3.25, True))
         self.assertFalse(ddi.assess_assumable("Conventional", 2.5, True))
@@ -122,18 +146,24 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(ddi.equity_gap_plan(100, 200)["equity_gap"], 0.0)
 
     def test_rich_text_chunked(self):
+        """Long text is split at Notion's 2000-character limit."""
         self.assertEqual([len(c["text"]["content"]) for c in ddi._rt("x" * 4500)], [2000, 2000, 500])
 
     def test_bad_number(self):
+        """A non-numeric amount raises IntakeError."""
         with self.assertRaises(ddi.IntakeError):
             ddi._num("about 200k")
 
 
 class TestIntake(unittest.TestCase):
+    """End-to-end intake runs against the fake Notion."""
+
     def setUp(self):
+        """Clear the operator env var so each test sets its own."""
         os.environ.pop("DEAL_DESK_OPERATOR", None)
 
     def test_dry_run_writes_nothing(self):
+        """A dry run makes no Notion calls and lists missing fields."""
         fake = FakeNotion()
         _, res = run(["--address", "1 Test St, Glassboro, NJ", "--dry-run"], fake)
         self.assertEqual(res["action"], "dry-run")
@@ -141,6 +171,7 @@ class TestIntake(unittest.TestCase):
         self.assertIn("Owner of record", " ".join(res["missing"]))
 
     def test_create_then_idempotent_rerun(self):
+        """A rerun with the same facts updates the row without a second dossier."""
         fake = FakeNotion()
         argv = ["--address", "12 Maple Ave, Glassboro, NJ", "--operator", "Fred",
                 "--skip-text", SKIP, "--asking", "240000", "--loan-type", "FHA", "--rate", "2.75",
@@ -162,12 +193,14 @@ class TestIntake(unittest.TestCase):
         self.assertEqual(fake.appended_dossiers(pid), 1)
 
     def test_dedupe_matches_spelling_variants(self):
+        """A "Dr" address matches an existing "Drive" row, not a different house number."""
         fake = FakeNotion(rows=["487 Example Drive", "48 Example Dr"])
         _, res = run(["--address", "487 Example Dr, Sewell, NJ 08080", "--asking", "199000"], fake)
         self.assertEqual((res["action"], res["page_id"]), ("updated", "page-0"))
         self.assertEqual(len(fake.pages), 2)
 
     def test_update_keeps_existing_pipeline_values(self):
+        """Defaults never overwrite stage, strategy, attorney flag or notes."""
         fake = FakeNotion(rows=["9 Oak Ln"])
         fake.pages["page-0"].update({
             "Stage": {"select": {"name": "5 Negotiating"}},
@@ -186,6 +219,7 @@ class TestIntake(unittest.TestCase):
         self.assertTrue(notes.startswith("[intake "))
 
     def test_explicit_values_do_update(self):
+        """Values the operator passes do overwrite the row."""
         fake = FakeNotion(rows=["9 Oak Ln"])
         fake.pages["page-0"]["Stage"] = {"select": {"name": "1 Lead"}}
         run(["--address", "9 Oak Ln", "--stage", "3 Analyzing", "--strategy", "Flip"], fake)
@@ -193,6 +227,7 @@ class TestIntake(unittest.TestCase):
         self.assertEqual(fake.pages["page-0"]["Strategy"]["select"]["name"], "Flip")
 
     def test_foreclosure_flags_and_holds_pitch(self):
+        """--foreclosure adds the NJ warning and holds the pitch."""
         fake = FakeNotion()
         _, res = run(["--address", "5 Elm St, Paulsboro, NJ", "--foreclosure", "--skip-text", SKIP], fake)
         props = fake.pages[res["page_id"]]
@@ -207,11 +242,13 @@ class TestIntake(unittest.TestCase):
         self.assertNotIn("I'm a local buyer", text)
 
     def test_operator_from_env(self):
+        """DEAL_DESK_OPERATOR sets the operator."""
         with mock.patch.dict(os.environ, {"DEAL_DESK_OPERATOR": "Fred"}):
             deal, _ = run(["--address", "1 Test St", "--dry-run"], FakeNotion())
         self.assertEqual(deal["operator"], "Fred")
 
     def test_facts_file_and_flags_win(self):
+        """A --facts file fills fields and flags override it."""
         import tempfile
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
             json.dump({"owner_name": "From File", "annual_taxes": "6,123", "town": "Glassboro"}, fh)
@@ -225,6 +262,7 @@ class TestIntake(unittest.TestCase):
         self.assertEqual(deal["town"], "Pitman")
 
     def test_cli_rejects_bad_strategy_and_missing_token(self):
+        """The launcher exits 2 on a bad strategy or a missing token."""
         env = {k: v for k, v in os.environ.items() if k != "NOTION_TOKEN"}
         launcher = SKILL / "bin" / "deal-desk-intake"
         bad = subprocess.run([str(launcher), "--address", "1 X St", "--strategy", "Wholesale"],  # nosec B603
@@ -237,6 +275,7 @@ class TestIntake(unittest.TestCase):
         self.assertIn("NOTION_TOKEN is not set", no_token.stderr)
 
     def test_main_dry_run_prints_json(self):
+        """main() prints a JSON dry-run result and returns 0."""
         buf = io.StringIO()
         with redirect_stdout(buf):
             rc = ddi.main(["--address", "1 Test St", "--dry-run"])
