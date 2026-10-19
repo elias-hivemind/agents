@@ -27,6 +27,7 @@ import os
 import re
 import sys
 import time
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -66,6 +67,7 @@ ATTORNEY_WARNING = (
 
 
 class IntakeError(RuntimeError):
+
     """Bad input or a Notion failure; main() reports it and exits 2."""
 
 
@@ -398,7 +400,7 @@ def _request(method: str, path: str, body: Optional[dict] = None) -> dict:
             if attempt < MAX_RETRIES:
                 time.sleep(float(resp.headers.get("Retry-After", 2 ** attempt)))
                 continue
-        if not (200 <= resp.status_code < 300):
+        if not 200 <= resp.status_code < 300:
             raise IntakeError(f"Notion {method} {path} -> {resp.status_code}: {resp.text[:400]}")
         return resp.json()
     raise IntakeError("unreachable")
@@ -497,16 +499,17 @@ NEXT_ACTION_DEFAULT = "Fill missing tax-record and contact fields; verify loan w
 NEXT_ACTION_FORECLOSURE = "ATTORNEY FIRST: verify docket and get NJ attorney review before any owner contact."
 
 
+@dataclass
 class _Picker:
+
     """Look a field up in the flags, then --facts, then the default.
 
     Defaults that fill a Notion property are recorded in `defaulted`, so an update can skip them.
     """
 
-    def __init__(self, args: argparse.Namespace, facts: Dict[str, Any]) -> None:
-        """Store the parsed flags and the --facts dict."""
-        self.args, self.facts = args, facts
-        self.defaulted: List[str] = []
+    args: argparse.Namespace
+    facts: Dict[str, Any]
+    defaulted: List[str] = field(default_factory=list)
 
     def __call__(self, name: str, default: Any = None, prop: Optional[str] = None) -> Any:
         """Return the first non-empty value for `name`."""

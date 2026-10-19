@@ -34,6 +34,7 @@ def _pid(path):
 
 
 class FakeNotion:
+
     """Just enough of the Notion API: data source query, page create/get/patch, block children."""
 
     def __init__(self, rows=None):
@@ -113,6 +114,7 @@ def run(argv, fake):
 
 
 class TestHelpers(unittest.TestCase):
+
     """Pure helpers: addresses, skip-trace parsing, deal math."""
 
     def test_normalize_street(self):
@@ -156,6 +158,7 @@ class TestHelpers(unittest.TestCase):
 
 
 class TestIntake(unittest.TestCase):
+
     """End-to-end intake runs against the fake Notion."""
 
     def setUp(self):
@@ -266,11 +269,11 @@ class TestIntake(unittest.TestCase):
         env = {k: v for k, v in os.environ.items() if k != "NOTION_TOKEN"}
         launcher = SKILL / "bin" / "deal-desk-intake"
         bad = subprocess.run([str(launcher), "--address", "1 X St", "--strategy", "Wholesale"],  # nosec B603
-                             capture_output=True, text=True, env=env)
+                             capture_output=True, text=True, env=env, check=False)
         self.assertEqual(bad.returncode, 2)
         self.assertIn("invalid choice", bad.stderr)
         no_token = subprocess.run([str(launcher), "--address", "1 X St"],  # nosec B603
-                                  capture_output=True, text=True, env=env)
+                                  capture_output=True, text=True, env=env, check=False)
         self.assertEqual(no_token.returncode, 2)
         self.assertIn("NOTION_TOKEN is not set", no_token.stderr)
 
