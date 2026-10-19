@@ -66,7 +66,7 @@ ATTORNEY_WARNING = (
 
 
 class IntakeError(RuntimeError):
-    pass
+    """Bad input or a Notion failure; main() reports it and exits 2."""
 
 
 # ------------------------------------------------------------------ address helpers
@@ -163,12 +163,14 @@ def _num(v: Any) -> Optional[float]:
 
 
 def assess_assumable(loan_type: Optional[str], rate: Optional[float], fixed: bool) -> Optional[bool]:
+    """True for a fixed FHA/VA/USDA loan at <= 3.0%; None when loan type or rate is unknown."""
     if not loan_type or rate is None:
         return None
     return loan_type.upper() in ASSUMABLE_LOANS and fixed and rate <= ASSUMABLE_RATE_MAX
 
 
 def equity_gap_plan(price: Optional[float], balance: Optional[float]) -> Optional[Dict[str, float]]:
+    """Split price minus loan balance into cash (capped at CASH_CAP) and a seller carryback 2nd."""
     if price is None or balance is None:
         return None
     gap = max(price - balance, 0.0)
@@ -178,12 +180,14 @@ def equity_gap_plan(price: Optional[float], balance: Optional[float]) -> Optiona
 
 
 def is_absentee(property_address: str, mailing: Optional[str]) -> Optional[bool]:
+    """True when the owner mailing address differs from the property; None if unknown."""
     if not mailing:
         return None
     return normalize_street(property_address) != normalize_street(mailing)
 
 
 def add_business_days(start: date, days: int) -> date:
+    """Date `days` weekdays after `start` (holidays not skipped)."""
     d = start
     while days > 0:
         d += timedelta(days=1)
@@ -266,6 +270,7 @@ def build_properties(deal: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def build_dossier(deal: Dict[str, Any], contacts: Dict[str, Any], missing: List[str]) -> List[dict]:
+    """Page blocks for one intake run: warning, stage 1-3 findings, missing list, pitch script."""
     blocks: List[dict] = []
     if deal.get("attorney_first"):
         blocks.append({"object": "block", "type": "callout", "callout": {
@@ -340,6 +345,7 @@ def build_dossier(deal: Dict[str, Any], contacts: Dict[str, Any], missing: List[
 
 
 def missing_fields(deal: Dict[str, Any]) -> List[str]:
+    """What the operator still has to research, with where to get each item."""
     checks = [
         ("owner_name", "Owner of record - pull from njparcels.com or the county/municipal tax assessor"),
         ("block_lot", "Block / lot - njparcels.com or municipal tax map"),
@@ -428,6 +434,7 @@ def _append(page_id: str, blocks: List[dict]) -> None:
 
 
 def upsert_deal(deal: Dict[str, Any], contacts: Dict[str, Any], dry_run: bool = False) -> Dict[str, Any]:
+    """Create the row, or update the matching one and append the dossier once per run hash."""
     props = build_properties(deal)
     missing = missing_fields(deal)
     blocks = build_dossier(deal, contacts, missing)
@@ -465,6 +472,7 @@ def upsert_deal(deal: Dict[str, Any], contacts: Dict[str, Any], dry_run: bool = 
 # ------------------------------------------------------------------ CLI
 
 def build_deal(args: argparse.Namespace) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Merge flags over --facts, derive the computed fields, and validate select values."""
     facts: Dict[str, Any] = {}
     if args.facts:
         with open(args.facts, encoding="utf-8") as fh:
@@ -557,13 +565,14 @@ def build_deal(args: argparse.Namespace) -> Tuple[Dict[str, Any], Dict[str, Any]
     volatile = ("run_date", "next_action_date", "notes_property")
     fingerprint = json.dumps({k: v for k, v in deal.items() if k not in volatile},
                              sort_keys=True, default=str) + json.dumps(contacts, sort_keys=True)
-    deal["run_hash"] = hashlib.sha1(fingerprint.encode()).hexdigest()[:10]
+    deal["run_hash"] = hashlib.sha256(fingerprint.encode()).hexdigest()[:10]
     deal["notes_property"] = deal["notes_property"].replace("{hash}", deal["run_hash"])
     deal["defaulted"] = defaulted
     return deal, contacts
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+    """CLI definition; --skip-file contents are appended to --skip-text."""
     ap = argparse.ArgumentParser(
         prog="deal-desk-intake",
         description="Add or update a South Jersey property in the Notion Deals Pipeline (idempotent).")
@@ -603,6 +612,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    """Entry point: prints the JSON result, returns 0 on success and 2 on IntakeError."""
     try:
         args = parse_args(argv)
         deal, contacts = build_deal(args)

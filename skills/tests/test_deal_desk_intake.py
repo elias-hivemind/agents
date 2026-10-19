@@ -145,7 +145,7 @@ class TestIntake(unittest.TestCase):
         argv = ["--address", "12 Maple Ave, Glassboro, NJ", "--operator", "Fred",
                 "--skip-text", SKIP, "--asking", "240000", "--loan-type", "FHA", "--rate", "2.75",
                 "--loan-balance", "205000"]
-        deal, res = run(argv, fake)
+        _, res = run(argv, fake)
         self.assertEqual(res["action"], "created")
         pid = res["page_id"]
         props = fake.pages[pid]
