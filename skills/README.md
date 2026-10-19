@@ -2,12 +2,13 @@
 
 Agent skills that turn desktop editors into command-line tools, plus the Kash Crown video style built on them. Each skill is a `SKILL.md` plus Python scripts in its `scripts/` folder. The editor CLIs use only the standard library; `capcut-cli` beat sync uses librosa when it is installed, and `kc-vendetta-bounce` needs numpy and Pillow.
 
-| Skill                                                 | Drives                                    | Headless?                                                      |
-| ----------------------------------------------------- | ----------------------------------------- | -------------------------------------------------------------- |
-| [`gimp-cli`](gimp-cli/SKILL.md)                       | GIMP 2.10 / 3.x via Script-Fu batch mode  | Yes                                                            |
-| [`davinci-resolve-cli`](davinci-resolve-cli/SKILL.md) | DaVinci Resolve 18+ via its scripting API | Needs Resolve running; external scripting needs Resolve Studio |
-| [`capcut-cli`](capcut-cli/SKILL.md)                   | CapCut drafts + ffmpeg edits + beat sync  | Yes. CapCut itself has no API, so edits render through ffmpeg  |
-| [`kc-vendetta-bounce`](kc-vendetta-bounce/SKILL.md)   | Cinematic cracked-gold lyric visualizer   | Yes. numpy + Pillow + ffmpeg; beats via capcut-cli / librosa   |
+| Skill                                                                             | Drives                                    | Headless?                                                                  |
+| --------------------------------------------------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------- |
+| [`gimp-cli`](gimp-cli/SKILL.md)                                                   | GIMP 2.10 / 3.x via Script-Fu batch mode  | Yes                                                                        |
+| [`davinci-resolve-cli`](davinci-resolve-cli/SKILL.md)                             | DaVinci Resolve 18+ via its scripting API | Needs Resolve running; external scripting needs Resolve Studio             |
+| [`capcut-cli`](capcut-cli/SKILL.md)                                               | CapCut drafts + ffmpeg edits + beat sync  | Yes. CapCut itself has no API, so edits render through ffmpeg              |
+| [`kc-vendetta-bounce`](kc-vendetta-bounce/SKILL.md)                               | Cinematic cracked-gold lyric visualizer   | Yes. numpy + Pillow + ffmpeg; beats via capcut-cli / librosa               |
+| [`south-jersey-creative-deal-finder`](south-jersey-creative-deal-finder/SKILL.md) | Notion Deals Pipeline intake (4 stages)   | Yes. Python + `requests`; needs `NOTION_TOKEN` (`--dry-run` needs neither) |
 
 ## Install
 
@@ -42,6 +43,16 @@ skills add img2threejs/img2threejs -g -a claude-code -y
 ```
 
 The skills work without the `skills` CLI too. Call the scripts directly, e.g. `python3 skills/gimp-cli/scripts/gimp_cli.py --help`.
+
+Deal desk intake (for Fred or any operator):
+
+```bash
+skills add elias-hivemind/agents -g -a claude-code -s south-jersey-creative-deal-finder -y
+pip install requests
+export NOTION_TOKEN=...            # Notion integration secret, shared with the Deals Pipeline database
+export DEAL_DESK_OPERATOR=Fred
+python3 skills/south-jersey-creative-deal-finder/scripts/deal_desk_intake.py --address "..." --dry-run
+```
 
 ## Tests
 
