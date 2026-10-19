@@ -1,9 +1,8 @@
-"""Tests for the south-jersey-creative-deal-finder intake CLI.
+"""Tests for the south-jersey-creative-deal-finder intake CLI."""
 
-The Notion API is replaced by an in-memory fake, so no token or network is needed.
-
-Run: python3 -m unittest discover -s skills/tests
-"""
+# The Notion API is replaced by an in-memory fake, so no token or network is needed.
+#
+# Run: python3 -m unittest discover -s skills/tests
 
 import io
 import json
@@ -34,7 +33,6 @@ def _pid(path):
 
 
 class FakeNotion:
-
     """Just enough of the Notion API: data source query, page create/get/patch, block children."""
 
     def __init__(self, rows=None):
@@ -114,7 +112,6 @@ def run(argv, fake):
 
 
 class TestHelpers(unittest.TestCase):
-
     """Pure helpers: addresses, skip-trace parsing, deal math."""
 
     def test_normalize_street(self):
@@ -158,7 +155,6 @@ class TestHelpers(unittest.TestCase):
 
 
 class TestIntake(unittest.TestCase):
-
     """End-to-end intake runs against the fake Notion."""
 
     def setUp(self):

@@ -5,7 +5,7 @@ description: Run the South Jersey Deal Desk 4-stage property intake (tax/parcel 
 
 # South Jersey creative deal finder
 
-`scripts/deal_desk_intake.py` writes one property into the Notion **Deals Pipeline** (Real Estate Deal Desk). It is idempotent. A row with the same normalized street address is updated, never duplicated. A dossier with identical facts is never appended twice. Defaults (stage, call, confidence, next action) only fill new rows, so a rerun never overwrites pipeline data a person already set.
+`scripts/deal_desk_intake.py` (with the page builders in `scripts/deal_desk_dossier.py`; keep both files together) writes one property into the Notion **Deals Pipeline** (Real Estate Deal Desk). It is idempotent. A row with the same normalized street address is updated, never duplicated. A dossier with identical facts is never appended twice. Defaults (stage, call, confidence, next action) only fill new rows, so a rerun never overwrites pipeline data a person already set.
 
 The script does no scraping. Stages 1-3 are researched by the operator or the agent and passed in as flags or a `--facts` JSON file. Anything not supplied is listed under "Still missing", never guessed.
 
